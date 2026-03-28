@@ -3814,12 +3814,6 @@
                     </svg>
                     <span class="sidebar-label">TRADEBOTS</span>
                 </div>
-                <div class="sidebar-icon" onclick="setActiveTab('db')" title="Database Inspector">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <ellipse cx="12" cy="5" rx="9" ry="3" />
-                        <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-                        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-                    </svg>
                     <span class="sidebar-label">DATABASE</span>
                 </div>
                 <div class="sidebar-spacer"></div>
@@ -6820,89 +6814,7 @@ onclick="toggleWatchlist('${coin.symbol}', event)">${isStarred ? '★' : '☆'}<
             }
         }
 
-        // ================= DATABASE INSPECTOR LOGIC =================
-        function setActiveIcon(tab) {
-            document.querySelectorAll('.sidebar-icon').forEach(icon => {
-                icon.classList.remove('active');
-            });
-            
-            // Map tabs to sidebar icon indices or IDs
-            const icons = document.querySelectorAll('.sidebar-icon');
-            if (tab === 'home') icons[0]?.classList.add('active');
-            if (tab === 'news') icons[1]?.classList.add('active');
-            if (tab === 'market') icons[2]?.classList.add('active');
-            if (tab === 'whale') icons[3]?.classList.add('active');
-            if (tab === 'analytics') icons[4]?.classList.add('active');
-            if (tab === 'bot') document.getElementById('btnBotView')?.classList.add('active');
-            if (tab === 'db') icons[6]?.classList.add('active'); // The new DB icon
-        }
-
-        async function loadDBTables() {
-            const list = document.getElementById('dbTablesList');
-            if (!list) return;
-            
-            list.innerHTML = '<div style="color:var(--text-muted); font-size:10px;">Reading schema...</div>';
-            
-            try {
-                const res = await fetch('/api/admin/db/tables');
-                const data = await res.json();
-                
-                if (data.tables) {
-                    list.innerHTML = data.tables.map(t => `
-                        <div class="intel-card" style="cursor:pointer; transition:all 0.2s;" onclick="loadTableData('${t}')">
-                            <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span style="font-weight:700; color:var(--bloomberg-orange); font-size:11px;">${t.toUpperCase()}</span>
-                                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3">
-                                    <polyline points="9 18 15 12 9 6"></polyline>
-                                </svg>
-                            </div>
-                        </div>
-                    `).join('');
-                    
-                    // Load first table by default if available
-                    if (data.tables.length > 0) loadTableData(data.tables[0]);
-                }
-            } catch (e) {
-                list.innerHTML = '<div style="color:var(--bloomberg-red); font-size:10px;">Failed to load tables.</div>';
-            }
-        }
-
-        async function loadTableData(tableName) {
-            const header = document.getElementById('dbTableHeader');
-            const body = document.getElementById('dbTableBody');
-            const indicator = document.getElementById('dbTableIndicator');
-            
-            if (!header || !body) return;
-            
-            indicator.textContent = `LOADING: ${tableName.toUpperCase()}...`;
-            
-            try {
-                const res = await fetch(`/api/admin/db/data?table=${tableName}`);
-                const result = await res.json();
-                
-                if (result.data && result.data.length > 0) {
-                    const keys = Object.keys(result.data[0]);
-                    
-                    header.innerHTML = `<tr>${keys.map(k => `<th>${k.toUpperCase()}</th>`).join('')}</tr>`;
-                    body.innerHTML = result.data.map(row => `
-                        <tr>${keys.map(k => {
-                            let val = row[k];
-                            if (typeof val === 'string' && val.length > 40) val = val.substring(0, 37) + '...';
-                            return `<td>${val === null ? '<span style="color:var(--text-muted)">NULL</span>' : val}</td>`;
-                        }).join('')}</tr>
-                    `).join('');
-                    
-                    indicator.textContent = `ACTIVE TABLE: ${tableName.toUpperCase()} (${result.data.length} ROWS)`;
-                } else {
-                    header.innerHTML = '';
-                    body.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:50px; color:var(--text-muted);">No data found in this table.</td></tr>';
-                    indicator.textContent = `ACTIVE TABLE: ${tableName.toUpperCase()} (EMPTY)`;
-                }
-            } catch (e) {
-                indicator.textContent = 'QUERY FAILED';
-                body.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:50px; color:var(--bloomberg-red);">Failed to fetch data.</td></tr>';
-            }
-        }
+        // Database Inspector logic removed for security
 
         // Initialize Identity Services
         setupGoogleAuth();

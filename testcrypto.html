@@ -4570,7 +4570,9 @@
     <script>
         /* CONFIG */
         const SERVER = window.location.origin;
-        const API = SERVER + '/api';
+        // In Cloudflare Pages, we need to point to the Render backend URL.
+        const CLOUD_API = window.TERMINAL_API_URL || 'https://crypto-terminal-api.onrender.com/api'; 
+        const API = (SERVER.includes('localhost') || SERVER.includes('127.0.0.1')) ? SERVER + '/api' : CLOUD_API;
 
         const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'ADAUSDT', 'DOTUSDT', 'AVAXUSDT', 'DOGEUSDT', 'LINKUSDT'];
         let SYMBOLS_WATCHLIST = [];

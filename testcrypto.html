@@ -4569,11 +4569,10 @@
 
     <script>
         /* CONFIG */
-        const SERVER = window.location.origin;
-        // If we are on Cloudflare Pages, we use the specific Render URL.
-        const CLOUD_API = window.TERMINAL_API_URL || 'https://crypto-terminal-ea59.onrender.com/api'; 
-        // If we are on Render itself or Localhost, we use the same origin.
-        const API = (SERVER.includes('localhost') || SERVER.includes('onrender.com')) ? SERVER + '/api' : CLOUD_API;
+        const SERVER = (window.location.origin.includes('localhost') || window.location.origin.includes('onrender.com')) 
+                    ? window.location.origin 
+                    : 'https://crypto-terminal-ea59.onrender.com';
+        const API = SERVER + '/api';
 
         const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'ADAUSDT', 'DOTUSDT', 'AVAXUSDT', 'DOGEUSDT', 'LINKUSDT'];
         let SYMBOLS_WATCHLIST = [];

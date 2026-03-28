@@ -24,6 +24,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 def index():
     return open(os.path.join(BASE_DIR, "testcrypto.html")).read()
 
+@app.route("/ads.txt")
+def ads_txt():
+    return open(os.path.join(BASE_DIR, "ads.txt")).read()
+
 def init_db():
     conn = get_db()
     cursor = conn.cursor()

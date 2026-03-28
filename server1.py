@@ -105,8 +105,8 @@ COINGECKO = "https://api.coingecko.com/api/v3"
 CG_CACHE = {}
 
 # Cloudflare Zero Trust Service Token (for cloud→local AI bridge)
-CF_CLIENT_ID = os.getenv("CF_ACCESS_CLIENT_ID", "")
-CF_CLIENT_SECRET = os.getenv("CF_ACCESS_CLIENT_SECRET", "")
+CF_CLIENT_ID = os.getenv("CF_ACCESS_CLIENT_ID", "") or os.getenv("CF-Access-Client-Id", "") or os.getenv("CF_Access_Client_Id", "")
+CF_CLIENT_SECRET = os.getenv("CF_ACCESS_CLIENT_SECRET", "") or os.getenv("CF-Access-Client-Secret", "") or os.getenv("CF_Access_Client_Secret", "")
 
 def get_cf_headers():
     """Returns Cloudflare Access auth headers if configured."""

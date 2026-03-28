@@ -1,0 +1,1525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6974941909092030"
+     crossorigin="anonymous"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CryptoTerminal Mobile</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        :root {
+            --bg-primary: #000000;
+            --bg-secondary: #0a0a0a;
+            --bg-panel: #111111;
+            --bg-card: #1a1a1a;
+            --bloomberg-orange: #FFA028;
+            --bloomberg-red: #FF433D;
+            --bloomberg-blue: #0068FF;
+            --bloomberg-green: #4AF6C3;
+            --bloomberg-amber: #FFB800;
+            --bloomberg-cyan: #00D4FF;
+            --text-primary: #FFFFFF;
+            --text-secondary: #B0B0B0;
+            --text-muted: #707070;
+            --border-color: #2a2a2a;
+            --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+            --safe-bottom: env(safe-area-inset-bottom, 20px);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        html, body {
+            height: 100%;
+            overflow: hidden;
+            font-family: var(--font-mono);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        /* Phone Container */
+        .phone-frame {
+            height: 100%;
+            max-width: 430px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            background: var(--bg-primary);
+        }
+
+        /* Status Bar */
+        .status-bar-phone {
+            background: linear-gradient(180deg, #1a1a1a 0%, #111111 100%);
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 11px;
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+        }
+        .status-left { display: flex; align-items: center; gap: 6px; }
+        .status-time { font-weight: 600; }
+        .status-right { display: flex; align-items: center; gap: 6px; }
+        .status-icon { width: 14px; height: 14px; }
+        .server-dot {
+            width: 6px; height: 6px; border-radius: 50%;
+            background: var(--bloomberg-green);
+            box-shadow: 0 0 6px var(--bloomberg-green);
+        }
+
+        /* Header */
+        .header {
+            background: var(--bg-secondary);
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+        }
+        .header-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 700;
+            font-size: 16px;
+            color: var(--bloomberg-orange);
+        }
+        .logo svg { width: 24px; height: 24px; }
+        .header-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        .header-btn {
+            width: 36px;
+            height: 36px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .header-btn:active {
+            background: var(--bloomberg-orange);
+            border-color: var(--bloomberg-orange);
+        }
+        .header-btn svg { width: 18px; height: 18px; color: var(--text-secondary); }
+        .header-btn:active svg { color: #000; }
+
+        /* Search Bar */
+        .search-bar {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .search-bar svg { width: 16px; height: 16px; color: var(--text-muted); flex-shrink: 0; }
+        .search-bar input {
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            font-size: 13px;
+            width: 100%;
+            outline: none;
+        }
+        .search-bar input::placeholder { color: var(--text-muted); }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 12px;
+            padding-bottom: calc(80px + var(--safe-bottom));
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* Hero Price Card */
+        .hero-card {
+            background: linear-gradient(135deg, #1a1a1a 0%, #111111 100%);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+        .hero-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+        .hero-coin {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .coin-icon {
+            width: 44px;
+            height: 44px;
+            background: linear-gradient(135deg, var(--bloomberg-orange), #FF6B00);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 700;
+        }
+        .coin-info h2 {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+        .coin-info span {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .coin-fav {
+            width: 36px;
+            height: 36px;
+            background: rgba(255,160,40,0.1);
+            border: 1px solid var(--bloomberg-orange);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .coin-fav svg { width: 18px; height: 18px; color: var(--bloomberg-orange); }
+
+        .hero-price {
+            margin-bottom: 16px;
+        }
+        .price-main {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .price-change {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .price-change.up { color: var(--bloomberg-green); }
+        .price-change.down { color: var(--bloomberg-red); }
+        .price-change svg { width: 16px; height: 16px; }
+
+        .hero-chart {
+            height: 140px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 16px;
+        }
+        #mobileChart { width: 100%; height: 100%; }
+
+        .time-tabs {
+            display: flex;
+            gap: 8px;
+        }
+        .time-tab {
+            flex: 1;
+            padding: 8px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .time-tab.active {
+            background: var(--bloomberg-orange);
+            border-color: var(--bloomberg-orange);
+            color: #000;
+        }
+
+        /* Section Title */
+        .section-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .section-title h3 {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--bloomberg-orange);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .section-title a {
+            font-size: 12px;
+            color: var(--bloomberg-blue);
+            text-decoration: none;
+        }
+
+        /* Ticker Scroll */
+        .ticker-scroll {
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+            padding: 4px 0 12px;
+            margin: 0 -12px;
+            padding-left: 12px;
+            padding-right: 12px;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            scroll-snap-type: x mandatory;
+        }
+        .ticker-scroll::-webkit-scrollbar { display: none; }
+
+        .ticker-card {
+            min-width: 140px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px;
+            scroll-snap-align: start;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .ticker-card:active {
+            border-color: var(--bloomberg-orange);
+            transform: scale(0.98);
+        }
+        .ticker-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .ticker-sym {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--bloomberg-orange);
+        }
+        .ticker-badge {
+            font-size: 9px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .ticker-badge.up {
+            background: rgba(74,246,195,0.15);
+            color: var(--bloomberg-green);
+        }
+        .ticker-badge.down {
+            background: rgba(255,67,61,0.15);
+            color: var(--bloomberg-red);
+        }
+        .ticker-price {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .ticker-change {
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .ticker-change.up { color: var(--bloomberg-green); }
+        .ticker-change.down { color: var(--bloomberg-red); }
+        .ticker-mini-chart {
+            height: 30px;
+            margin-top: 10px;
+        }
+
+        /* Market Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px;
+        }
+        .stat-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+        .stat-value {
+            font-size: 16px;
+            font-weight: 700;
+        }
+        .stat-value.green { color: var(--bloomberg-green); }
+        .stat-value.red { color: var(--bloomberg-red); }
+        .stat-value.orange { color: var(--bloomberg-orange); }
+
+        /* Watchlist */
+        .watchlist {
+            margin-bottom: 20px;
+        }
+        .watchlist-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .watchlist-item:active {
+            border-color: var(--bloomberg-orange);
+            transform: scale(0.98);
+        }
+        .wl-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .wl-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #333, #222);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 700;
+        }
+        .wl-info h4 {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+        .wl-info span {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        .wl-right {
+            text-align: right;
+        }
+        .wl-price {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .wl-change {
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .wl-change.up { color: var(--bloomberg-green); }
+        .wl-change.down { color: var(--bloomberg-red); }
+
+        /* News Cards */
+        .news-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        .news-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 10px;
+        }
+        .news-source {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--bloomberg-orange);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .news-time {
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+        .news-title {
+            font-size: 14px;
+            font-weight: 600;
+            line-height: 1.4;
+            margin-bottom: 10px;
+        }
+        .news-tags {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .news-tag {
+            font-size: 10px;
+            padding: 4px 8px;
+            background: rgba(0,104,255,0.15);
+            color: var(--bloomberg-blue);
+            border-radius: 4px;
+        }
+
+        /* Quick Trade */
+        .quick-trade {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        .trade-input-group {
+            margin-bottom: 12px;
+        }
+        .trade-input-group label {
+            font-size: 11px;
+            color: var(--text-muted);
+            display: block;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+        }
+        .trade-input-wrapper {
+            display: flex;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .trade-input-wrapper input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            padding: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            outline: none;
+        }
+        .trade-input-suffix {
+            padding: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-muted);
+            background: var(--bg-card);
+            border-left: 1px solid var(--border-color);
+        }
+        .trade-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .trade-btn {
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .trade-btn:active {
+            transform: scale(0.96);
+        }
+        .trade-btn.buy {
+            background: var(--bloomberg-green);
+            color: #000;
+        }
+        .trade-btn.sell {
+            background: var(--bloomberg-red);
+            color: #fff;
+        }
+
+        /* Bottom Navigation */
+        .bottom-nav {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(10,10,10,0.98);
+            backdrop-filter: blur(20px);
+            border-top: 1px solid var(--border-color);
+            padding: 8px 0;
+            padding-bottom: calc(8px + var(--safe-bottom));
+            display: flex;
+            justify-content: space-around;
+            z-index: 100;
+        }
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            padding: 8px 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .nav-item svg {
+            width: 22px;
+            height: 22px;
+            color: var(--text-muted);
+            transition: all 0.2s;
+        }
+        .nav-item span {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            transition: all 0.2s;
+        }
+        .nav-item.active svg { color: var(--bloomberg-orange); }
+        .nav-item.active span { color: var(--bloomberg-orange); }
+        .nav-item.active svg {
+            filter: drop-shadow(0 0 8px var(--bloomberg-orange));
+        }
+
+        /* Tab Pages */
+        .tab-page {
+            display: none;
+        }
+        .tab-page.active {
+            display: block;
+        }
+
+        /* Markets Tab */
+        .markets-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+        }
+        .market-tab {
+            padding: 10px 20px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            white-space: nowrap;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .market-tab.active {
+            background: var(--bloomberg-orange);
+            border-color: var(--bloomberg-orange);
+            color: #000;
+        }
+
+        .market-list-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .ml-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .ml-rank {
+            font-size: 12px;
+            color: var(--text-muted);
+            width: 24px;
+        }
+        .ml-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #333, #222);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .ml-name h4 { font-size: 14px; font-weight: 700; }
+        .ml-name span { font-size: 11px; color: var(--text-muted); }
+        .ml-right { text-align: right; }
+        .ml-price { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+        .ml-change { font-size: 12px; font-weight: 600; }
+        .ml-change.up { color: var(--bloomberg-green); }
+        .ml-change.down { color: var(--bloomberg-red); }
+
+        /* Portfolio Tab */
+        .portfolio-header {
+            background: linear-gradient(135deg, #1a1a1a 0%, #111111 100%);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+        .portfolio-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+        .portfolio-value {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .portfolio-change {
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .portfolio-change.up { color: var(--bloomberg-green); }
+        .portfolio-change.down { color: var(--bloomberg-red); }
+
+        .asset-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .asset-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .asset-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 700;
+        }
+        .asset-info h4 { font-size: 14px; font-weight: 700; }
+        .asset-info span { font-size: 12px; color: var(--text-muted); }
+        .asset-right { text-align: right; }
+        .asset-value { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+        .asset-amount { font-size: 12px; color: var(--text-muted); }
+
+        /* Alerts Tab */
+        .alert-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        .alert-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .alert-coin {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .alert-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .alert-name { font-size: 14px; font-weight: 700; }
+        .alert-type {
+            font-size: 10px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .alert-type.above {
+            background: rgba(74,246,195,0.15);
+            color: var(--bloomberg-green);
+        }
+        .alert-type.below {
+            background: rgba(255,67,61,0.15);
+            color: var(--bloomberg-red);
+        }
+        .alert-details {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-top: 1px solid var(--border-color);
+        }
+        .alert-detail-label { font-size: 11px; color: var(--text-muted); }
+        .alert-detail-value { font-size: 12px; font-weight: 600; }
+
+        /* Pull to refresh indicator */
+        .pull-indicator {
+            text-align: center;
+            padding: 20px;
+            color: var(--bloomberg-orange);
+            font-size: 12px;
+            display: none;
+        }
+        .pull-indicator.show { display: block; }
+
+        /* Animations */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .live-indicator {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-in {
+            animation: slideUp 0.3s ease-out forwards;
+        }
+
+        /* Toast Notification */
+        .toast {
+            position: fixed;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-100px);
+            background: var(--bg-card);
+            border: 1px solid var(--bloomberg-green);
+            border-radius: 10px;
+            padding: 12px 20px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--bloomberg-green);
+            z-index: 200;
+            transition: transform 0.3s ease;
+        }
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <div class="phone-frame">
+        <!-- Status Bar -->
+        <div class="status-bar-phone">
+            <div class="status-left">
+                <span class="status-time" id="currentTime">9:41</span>
+            </div>
+            <div class="status-right">
+                <svg class="status-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3C7.46 3 3.34 4.78.29 7.67c-.18.18-.29.43-.29.71 0 .28.11.53.29.71l2.48 2.48c.18.18.43.29.71.29.27 0 .52-.11.7-.28.79-.74 1.69-1.36 2.66-1.85.33-.16.56-.5.56-.9v-3.1c1.45-.48 3-.73 4.6-.73s3.15.25 4.6.73v3.1c0 .4.23.74.56.9.98.49 1.87 1.12 2.67 1.85.18.18.43.28.7.28.28 0 .53-.11.71-.29l2.48-2.48c.18-.18.29-.43.29-.71 0-.28-.11-.53-.29-.71C20.66 4.78 16.54 3 12 3z"/></svg>
+                <svg class="status-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z"/></svg>
+                <div class="server-dot"></div>
+            </div>
+        </div>
+
+        <!-- Header -->
+        <div class="header">
+            <div class="header-top">
+                <div class="logo">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                    <span>CT</span>
+                </div>
+                <div class="header-actions">
+                    <div class="header-btn" onclick="showToast('Searching...')">
+                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                    </div>
+                    <div class="header-btn" onclick="showToast('Notifications')">
+                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    </div>
+                </div>
+            </div>
+            <div class="search-bar">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input type="text" placeholder="Search coins, tokens...">
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content" id="mainContent">
+            <div class="pull-indicator" id="pullIndicator">
+                <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
+                Pull to refresh
+            </div>
+
+            <!-- Home Tab -->
+            <div class="tab-page active" id="homeTab">
+                <!-- Hero Card -->
+                <div class="hero-card">
+                    <div class="hero-header">
+                        <div class="hero-coin">
+                            <div class="coin-icon">B</div>
+                            <div class="coin-info">
+                                <h2>Bitcoin</h2>
+                                <span>BTC</span>
+                            </div>
+                        </div>
+                        <div class="coin-fav">
+                            <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                        </div>
+                    </div>
+                    <div class="hero-price">
+                        <div class="price-main">$67,432.18</div>
+                        <div class="price-change up">
+                            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg>
+                            +$1,234.56 (+2.34%)
+                            <span class="live-indicator">LIVE</span>
+                        </div>
+                    </div>
+                    <div class="hero-chart">
+                        <div id="mobileChart"></div>
+                    </div>
+                    <div class="time-tabs">
+                        <div class="time-tab">1H</div>
+                        <div class="time-tab active">1D</div>
+                        <div class="time-tab">1W</div>
+                        <div class="time-tab">1M</div>
+                        <div class="time-tab">1Y</div>
+                    </div>
+                </div>
+
+                <!-- Top Movers -->
+                <div class="section-title">
+                    <h3>Top Movers</h3>
+                    <a href="#">See All</a>
+                </div>
+                <div class="ticker-scroll">
+                    <div class="ticker-card" onclick="selectCoin('ETH')">
+                        <div class="ticker-top">
+                            <span class="ticker-sym">ETH</span>
+                            <span class="ticker-badge up">+5.2%</span>
+                        </div>
+                        <div class="ticker-price">$3,456.78</div>
+                        <div class="ticker-change up">+$178.90</div>
+                        <canvas class="ticker-mini-chart" id="ethMiniChart"></canvas>
+                    </div>
+                    <div class="ticker-card" onclick="selectCoin('SOL')">
+                        <div class="ticker-top">
+                            <span class="ticker-sym">SOL</span>
+                            <span class="ticker-badge up">+8.4%</span>
+                        </div>
+                        <div class="ticker-price">$178.23</div>
+                        <div class="ticker-change up">+$13.78</div>
+                        <canvas class="ticker-mini-chart" id="solMiniChart"></canvas>
+                    </div>
+                    <div class="ticker-card" onclick="selectCoin('DOGE')">
+                        <div class="ticker-top">
+                            <span class="ticker-sym">DOGE</span>
+                            <span class="ticker-badge down">-3.1%</span>
+                        </div>
+                        <div class="ticker-price">$0.1234</div>
+                        <div class="ticker-change down">-$0.0039</div>
+                        <canvas class="ticker-mini-chart" id="dogeMiniChart"></canvas>
+                    </div>
+                    <div class="ticker-card" onclick="selectCoin('XRP')">
+                        <div class="ticker-top">
+                            <span class="ticker-sym">XRP</span>
+                            <span class="ticker-badge up">+2.8%</span>
+                        </div>
+                        <div class="ticker-price">$0.5678</div>
+                        <div class="ticker-change up">+$0.0154</div>
+                        <canvas class="ticker-mini-chart" id="xrpMiniChart"></canvas>
+                    </div>
+                    <div class="ticker-card" onclick="selectCoin('ADA')">
+                        <div class="ticker-top">
+                            <span class="ticker-sym">ADA</span>
+                            <span class="ticker-badge up">+4.5%</span>
+                        </div>
+                        <div class="ticker-price">$0.4567</div>
+                        <div class="ticker-change up">+$0.0197</div>
+                        <canvas class="ticker-mini-chart" id="adaMiniChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Stats Grid -->
+                <div class="section-title">
+                    <h3>Market Stats</h3>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Market Cap</div>
+                        <div class="stat-value orange">$2.45T</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">24h Volume</div>
+                        <div class="stat-value">$89.2B</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">BTC Dominance</div>
+                        <div class="stat-value">52.4%</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Fear & Greed</div>
+                        <div class="stat-value green">72</div>
+                    </div>
+                </div>
+
+                <!-- News -->
+                <div class="section-title">
+                    <h3>Latest News</h3>
+                    <a href="#">See All</a>
+                </div>
+                <div class="news-card">
+                    <div class="news-header">
+                        <span class="news-source">CoinDesk</span>
+                        <span class="news-time">5 min ago</span>
+                    </div>
+                    <div class="news-title">Bitcoin ETF Inflows Reach Record $1.2B as Institutional Interest Grows</div>
+                    <div class="news-tags">
+                        <span class="news-tag">BTC</span>
+                        <span class="news-tag">ETF</span>
+                        <span class="news-tag">Institutional</span>
+                    </div>
+                </div>
+                <div class="news-card">
+                    <div class="news-header">
+                        <span class="news-source">Decrypt</span>
+                        <span class="news-time">12 min ago</span>
+                    </div>
+                    <div class="news-title">Ethereum Layer 2 Solutions Process 10x More Transactions Than Mainnet</div>
+                    <div class="news-tags">
+                        <span class="news-tag">ETH</span>
+                        <span class="news-tag">L2</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Markets Tab -->
+            <div class="tab-page" id="marketsTab">
+                <div class="markets-tabs">
+                    <div class="market-tab active">All</div>
+                    <div class="market-tab">Gainers</div>
+                    <div class="market-tab">Losers</div>
+                    <div class="market-tab">Volume</div>
+                </div>
+                <div id="marketList">
+                    <div class="market-list-item" onclick="selectCoin('BTC')">
+                        <div class="ml-left">
+                            <span class="ml-rank">1</span>
+                            <div class="ml-icon">B</div>
+                            <div class="ml-name">
+                                <h4>Bitcoin</h4>
+                                <span>BTC</span>
+                            </div>
+                        </div>
+                        <div class="ml-right">
+                            <div class="ml-price">$67,432.18</div>
+                            <div class="ml-change up">+2.34%</div>
+                        </div>
+                    </div>
+                    <div class="market-list-item" onclick="selectCoin('ETH')">
+                        <div class="ml-left">
+                            <span class="ml-rank">2</span>
+                            <div class="ml-icon" style="background: linear-gradient(135deg, #627EEA, #4B5C9D);">E</div>
+                            <div class="ml-name">
+                                <h4>Ethereum</h4>
+                                <span>ETH</span>
+                            </div>
+                        </div>
+                        <div class="ml-right">
+                            <div class="ml-price">$3,456.78</div>
+                            <div class="ml-change up">+5.21%</div>
+                        </div>
+                    </div>
+                    <div class="market-list-item" onclick="selectCoin('BNB')">
+                        <div class="ml-left">
+                            <span class="ml-rank">3</span>
+                            <div class="ml-icon" style="background: linear-gradient(135deg, #F3BA2F, #C59A1C);">B</div>
+                            <div class="ml-name">
+                                <h4>BNB</h4>
+                                <span>BNB</span>
+                            </div>
+                        </div>
+                        <div class="ml-right">
+                            <div class="ml-price">$567.89</div>
+                            <div class="ml-change up">+1.23%</div>
+                        </div>
+                    </div>
+                    <div class="market-list-item" onclick="selectCoin('SOL')">
+                        <div class="ml-left">
+                            <span class="ml-rank">4</span>
+                            <div class="ml-icon" style="background: linear-gradient(135deg, #9945FF, #14F195);">S</div>
+                            <div class="ml-name">
+                                <h4>Solana</h4>
+                                <span>SOL</span>
+                            </div>
+                        </div>
+                        <div class="ml-right">
+                            <div class="ml-price">$178.23</div>
+                            <div class="ml-change up">+8.42%</div>
+                        </div>
+                    </div>
+                    <div class="market-list-item" onclick="selectCoin('XRP')">
+                        <div class="ml-left">
+                            <span class="ml-rank">5</span>
+                            <div class="ml-icon" style="background: linear-gradient(135deg, #23292F, #1A1F25);">X</div>
+                            <div class="ml-name">
+                                <h4>XRP</h4>
+                                <span>XRP</span>
+                            </div>
+                        </div>
+                        <div class="ml-right">
+                            <div class="ml-price">$0.5678</div>
+                            <div class="ml-change up">+2.78%</div>
+                        </div>
+                    </div>
+                    <div class="market-list-item" onclick="selectCoin('ADA')">
+                        <div class="ml-left">
+                            <span class="ml-rank">6</span>
+                            <div class="ml-icon" style="background: linear-gradient(135deg, #0033AD, #0052FF);">A</div>
+                            <div class="ml-name">
+                                <h4>Cardano</h4>
+                                <span>ADA</span>
+                            </div>
+                        </div>
+                        <div class="ml-right">
+                            <div class="ml-price">$0.4567</div>
+                            <div class="ml-change up">+4.51%</div>
+                        </div>
+                    </div>
+                    <div class="market-list-item" onclick="selectCoin('DOGE')">
+                        <div class="ml-left">
+                            <span class="ml-rank">7</span>
+                            <div class="ml-icon" style="background: linear-gradient(135deg, #C2A633, #8A7424);">D</div>
+                            <div class="ml-name">
+                                <h4>Dogecoin</h4>
+                                <span>DOGE</span>
+                            </div>
+                        </div>
+                        <div class="ml-right">
+                            <div class="ml-price">$0.1234</div>
+                            <div class="ml-change down">-3.12%</div>
+                        </div>
+                    </div>
+                    <div class="market-list-item" onclick="selectCoin('AVAX')">
+                        <div class="ml-left">
+                            <span class="ml-rank">8</span>
+                            <div class="ml-icon" style="background: linear-gradient(135deg, #E84142, #B82E2E);">A</div>
+                            <div class="ml-name">
+                                <h4>Avalanche</h4>
+                                <span>AVAX</span>
+                            </div>
+                        </div>
+                        <div class="ml-right">
+                            <div class="ml-price">$34.56</div>
+                            <div class="ml-change up">+3.45%</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Trade Tab -->
+            <div class="tab-page" id="tradeTab">
+                <div class="section-title">
+                    <h3>Quick Trade</h3>
+                </div>
+                <div class="quick-trade">
+                    <div class="trade-input-group">
+                        <label>You Pay</label>
+                        <div class="trade-input-wrapper">
+                            <input type="number" value="0.1" id="payAmount">
+                            <span class="trade-input-suffix">BTC</span>
+                        </div>
+                    </div>
+                    <div style="text-align: center; padding: 10px; color: var(--text-muted);">
+                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M16.01 11H4v2h12.01v3L20 12l-3.99-4z"/></svg>
+                    </div>
+                    <div class="trade-input-group">
+                        <label>You Receive</label>
+                        <div class="trade-input-wrapper">
+                            <input type="number" value="345.67" id="receiveAmount">
+                            <span class="trade-input-suffix">ETH</span>
+                        </div>
+                    </div>
+                    <div style="font-size: 11px; color: var(--text-muted); text-align: center; margin-bottom: 12px;">
+                        1 BTC ≈ 3,456.78 ETH • Rate expires in 2:45
+                    </div>
+                    <div class="trade-buttons">
+                        <button class="trade-btn buy" onclick="showToast('Buy order placed!')">Buy ETH</button>
+                        <button class="trade-btn sell" onclick="showToast('Sell order placed!')">Sell ETH</button>
+                    </div>
+                </div>
+
+                <div class="section-title">
+                    <h3>Open Orders</h3>
+                </div>
+                <div class="news-card">
+                    <div class="alert-header">
+                        <div class="alert-coin">
+                            <div class="alert-icon" style="background: linear-gradient(135deg, #627EEA, #4B5C9D);">E</div>
+                            <div>
+                                <div class="alert-name">ETH/USDT</div>
+                                <div style="font-size: 10px; color: var(--text-muted);">Limit Buy</div>
+                            </div>
+                        </div>
+                        <span class="alert-type above">ACTIVE</span>
+                    </div>
+                    <div class="alert-details">
+                        <div>
+                            <div class="alert-detail-label">Amount</div>
+                            <div class="alert-detail-value">0.5 ETH</div>
+                        </div>
+                        <div>
+                            <div class="alert-detail-label">Price</div>
+                            <div class="alert-detail-value">$3,200.00</div>
+                        </div>
+                        <div>
+                            <div class="alert-detail-label">Total</div>
+                            <div class="alert-detail-value">$1,600</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Portfolio Tab -->
+            <div class="tab-page" id="portfolioTab">
+                <div class="portfolio-header">
+                    <div class="portfolio-label">Total Portfolio Value</div>
+                    <div class="portfolio-value">$24,567.89</div>
+                    <div class="portfolio-change up">+$1,234.56 (+5.29%)</div>
+                </div>
+
+                <div class="section-title">
+                    <h3>Holdings</h3>
+                </div>
+                <div class="asset-item">
+                    <div class="asset-left">
+                        <div class="asset-icon" style="background: linear-gradient(135deg, #FFA028, #FF6B00);">B</div>
+                        <div class="asset-info">
+                            <h4>Bitcoin</h4>
+                            <span>0.25 BTC</span>
+                        </div>
+                    </div>
+                    <div class="asset-right">
+                        <div class="asset-value">$16,858.05</div>
+                        <div class="asset-amount">68.6%</div>
+                    </div>
+                </div>
+                <div class="asset-item">
+                    <div class="asset-left">
+                        <div class="asset-icon" style="background: linear-gradient(135deg, #627EEA, #4B5C9D);">E</div>
+                        <div class="asset-info">
+                            <h4>Ethereum</h4>
+                            <span>2.1 ETH</span>
+                        </div>
+                    </div>
+                    <div class="asset-right">
+                        <div class="asset-value">$7,259.24</div>
+                        <div class="asset-amount">29.5%</div>
+                    </div>
+                </div>
+                <div class="asset-item">
+                    <div class="asset-left">
+                        <div class="asset-icon" style="background: linear-gradient(135deg, #9945FF, #14F195);">S</div>
+                        <div class="asset-info">
+                            <h4>Solana</h4>
+                            <span>2.5 SOL</span>
+                        </div>
+                    </div>
+                    <div class="asset-right">
+                        <div class="asset-value">$445.58</div>
+                        <div class="asset-amount">1.8%</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Alerts Tab -->
+            <div class="tab-page" id="alertsTab">
+                <div class="section-title">
+                    <h3>Price Alerts</h3>
+                    <a href="#" onclick="showToast('Add new alert')">+ Add</a>
+                </div>
+                <div class="alert-item">
+                    <div class="alert-header">
+                        <div class="alert-coin">
+                            <div class="alert-icon" style="background: linear-gradient(135deg, #FFA028, #FF6B00);">B</div>
+                            <div>
+                                <div class="alert-name">Bitcoin</div>
+                                <div style="font-size: 10px; color: var(--text-muted);">BTC</div>
+                            </div>
+                        </div>
+                        <span class="alert-type above">Above</span>
+                    </div>
+                    <div class="alert-details">
+                        <div>
+                            <div class="alert-detail-label">Target</div>
+                            <div class="alert-detail-value">$70,000</div>
+                        </div>
+                        <div>
+                            <div class="alert-detail-label">Current</div>
+                            <div class="alert-detail-value">$67,432</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="alert-item">
+                    <div class="alert-header">
+                        <div class="alert-coin">
+                            <div class="alert-icon" style="background: linear-gradient(135deg, #627EEA, #4B5C9D);">E</div>
+                            <div>
+                                <div class="alert-name">Ethereum</div>
+                                <div style="font-size: 10px; color: var(--text-muted);">ETH</div>
+                            </div>
+                        </div>
+                        <span class="alert-type below">Below</span>
+                    </div>
+                    <div class="alert-details">
+                        <div>
+                            <div class="alert-detail-label">Target</div>
+                            <div class="alert-detail-value">$3,000</div>
+                        </div>
+                        <div>
+                            <div class="alert-detail-label">Current</div>
+                            <div class="alert-detail-value">$3,456</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="alert-item">
+                    <div class="alert-header">
+                        <div class="alert-coin">
+                            <div class="alert-icon" style="background: linear-gradient(135deg, #9945FF, #14F195);">S</div>
+                            <div>
+                                <div class="alert-name">Solana</div>
+                                <div style="font-size: 10px; color: var(--text-muted);">SOL</div>
+                            </div>
+                        </div>
+                        <span class="alert-type above">Above</span>
+                    </div>
+                    <div class="alert-details">
+                        <div>
+                            <div class="alert-detail-label">Target</div>
+                            <div class="alert-detail-value">$200</div>
+                        </div>
+                        <div>
+                            <div class="alert-detail-label">Current</div>
+                            <div class="alert-detail-value">$178.23</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Navigation -->
+        <div class="bottom-nav">
+            <div class="nav-item active" onclick="switchTab('home')">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                <span>Home</span>
+            </div>
+            <div class="nav-item" onclick="switchTab('markets')">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                <span>Markets</span>
+            </div>
+            <div class="nav-item" onclick="switchTab('trade')">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M16 3h5v5"/><path d="M8 21H3v-5"/><path d="M21 3l-9 9"/><path d="M3 21l9-9"/></svg>
+                <span>Trade</span>
+            </div>
+            <div class="nav-item" onclick="switchTab('portfolio')">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                <span>Portfolio</span>
+            </div>
+            <div class="nav-item" onclick="switchTab('alerts')">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                <span>Alerts</span>
+            </div>
+        </div>
+
+        <!-- Toast -->
+        <div class="toast" id="toast"></div>
+    </div>
+
+    <script>
+        // Update time
+        function updateTime() {
+            const now = new Date();
+            const hours = now.getHours();
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+            document.getElementById('currentTime').textContent = `${hours}:${minutes}`;
+        }
+        updateTime();
+        setInterval(updateTime, 1000);
+
+        // Tab switching
+        function switchTab(tab) {
+            // Update nav
+            document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+
+            // Update content
+            document.querySelectorAll('.tab-page').forEach(page => page.classList.remove('active'));
+            document.getElementById(tab + 'Tab').classList.add('active');
+
+            // Scroll to top
+            document.getElementById('mainContent').scrollTop = 0;
+        }
+
+        // Time tabs
+        document.querySelectorAll('.time-tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.time-tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+            });
+        });
+
+        // Market tabs
+        document.querySelectorAll('.market-tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.market-tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+            });
+        });
+
+        // Toast
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2500);
+        }
+
+        // Select coin
+        function selectCoin(symbol) {
+            showToast('Selected: ' + symbol);
+            switchTab('trade');
+        }
+
+        // Main chart
+        function initChart() {
+            const chartContainer = document.getElementById('mobileChart');
+            if (!chartContainer) return;
+
+            const chart = LightweightCharts.createChart(chartContainer, {
+                width: chartContainer.clientWidth,
+                height: 140,
+                layout: {
+                    background: { type: 'solid', color: 'transparent' },
+                    textColor: '#707070',
+                },
+                grid: {
+                    vertLines: { visible: false },
+                    horzLines: { color: '#1a1a1a' },
+                },
+                crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                rightPriceScale: { visible: false },
+                timeScale: { visible: false },
+                handleScroll: false,
+                handleScale: false,
+            });
+
+            const lineSeries = chart.addAreaSeries({
+                lineColor: '#FFA028',
+                topColor: 'rgba(255, 160, 40, 0.4)',
+                bottomColor: 'rgba(255, 160, 40, 0.0)',
+                lineWidth: 2,
+            });
+
+            // Generate sample data
+            const data = [];
+            let price = 65000;
+            for (let i = 0; i < 50; i++) {
+                price += (Math.random() - 0.48) * 500;
+                data.push({ time: i, value: price });
+            }
+            lineSeries.setData(data);
+            chart.timeScale().fitContent();
+        }
+
+        // Mini charts for ticker cards
+        function initMiniCharts() {
+            const symbols = ['ethMiniChart', 'solMiniChart', 'dogeMiniChart', 'xrpMiniChart', 'adaMiniChart'];
+            symbols.forEach(id => {
+                const canvas = document.getElementById(id);
+                if (!canvas) return;
+
+                const ctx = canvas.getContext('2d');
+                const width = canvas.offsetWidth;
+                const height = 30;
+                canvas.width = width;
+                canvas.height = height;
+
+                const data = [];
+                let val = 100;
+                for (let i = 0; i < width; i++) {
+                    val += (Math.random() - 0.48) * 3;
+                    data.push(val);
+                }
+
+                const isUp = data[data.length - 1] > data[0];
+                const color = isUp ? '#4AF6C3' : '#FF433D';
+
+                ctx.beginPath();
+                ctx.moveTo(0, height);
+                data.forEach((v, i) => {
+                    const y = height - ((v - Math.min(...data)) / (Math.max(...data) - Math.min(...data))) * height;
+                    if (i === 0) ctx.moveTo(i, y);
+                    else ctx.lineTo(i, y);
+                });
+                ctx.lineTo(width, height);
+                ctx.closePath();
+                ctx.fillStyle = color + '30';
+                ctx.fill();
+
+                ctx.beginPath();
+                data.forEach((v, i) => {
+                    const y = height - ((v - Math.min(...data)) / (Math.max(...data) - Math.min(...data))) * height;
+                    if (i === 0) ctx.moveTo(i, y);
+                    else ctx.lineTo(i, y);
+                });
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            });
+        }
+
+        // Initialize
+        window.addEventListener('load', () => {
+            initChart();
+            initMiniCharts();
+        });
+
+        window.addEventListener('resize', () => {
+            initChart();
+            initMiniCharts();
+        });
+
+        // Pull to refresh simulation
+        let startY = 0;
+        document.getElementById('mainContent').addEventListener('touchstart', (e) => {
+            startY = e.touches[0].clientY;
+            if (document.getElementById('mainContent').scrollTop === 0) {
+                document.getElementById('pullIndicator').classList.add('show');
+            }
+        });
+
+        document.getElementById('mainContent').addEventListener('touchend', (e) => {
+            const endY = e.changedTouches[0].clientY;
+            if (endY - startY > 100 && document.getElementById('mainContent').scrollTop === 0) {
+                showToast('Refreshing data...');
+                setTimeout(() => {
+                    document.getElementById('pullIndicator').classList.remove('show');
+                    showToast('Data updated!');
+                }, 1500);
+            } else {
+                document.getElementById('pullIndicator').classList.remove('show');
+            }
+        });
+    </script>
+</body>
+</html>

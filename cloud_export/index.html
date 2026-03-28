@@ -2,8 +2,6 @@
 <html lang="en">
 
 <head>
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6974941909092030"
-     crossorigin="anonymous"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
     <title>Crypto Terminal Pro</title>
@@ -4571,10 +4569,11 @@
 
     <script>
         /* CONFIG */
-        const SERVER = (window.location.origin.includes('localhost') || window.location.origin.includes('onrender.com')) 
-                    ? window.location.origin 
-                    : 'https://crypto-terminal-ea59.onrender.com';
-        const API = SERVER + '/api';
+        const SERVER = window.location.origin;
+        // If we are on Cloudflare Pages, we use the specific Render URL.
+        const CLOUD_API = window.TERMINAL_API_URL || 'https://crypto-terminal-ea59.onrender.com/api'; 
+        // If we are on Render itself or Localhost, we use the same origin.
+        const API = (SERVER.includes('localhost') || SERVER.includes('onrender.com')) ? SERVER + '/api' : CLOUD_API;
 
         const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'ADAUSDT', 'DOTUSDT', 'AVAXUSDT', 'DOGEUSDT', 'LINKUSDT'];
         let SYMBOLS_WATCHLIST = [];

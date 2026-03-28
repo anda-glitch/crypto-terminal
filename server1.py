@@ -100,31 +100,75 @@ NEWS_TIME = 0
 EVENTS = []
 EVENTS_TIME = 0
 
-# OLLAMA CONFIG (Supports Hybrid Cloud Bridge)
+# AI CONFIGURATION (Supports Local Ollama & Cloudflare AI Gateway)
 OLLAMA_BASE = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
-OLLAMA = f"{OLLAMA_BASE}/api/generate"
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "minimax-m2.7:cloud")
-OLLAMA_FALLBACK_MODEL = "qwen2.5:3b"
-COINGECKO = "https://api.coingecko.com/api/v3"
-CG_CACHE = {}
+OLLAMA_FALLBACK_MODEL = os.getenv("OLLAMA_FALLBACK_MODEL", "qwen2.5:3b")
 
-# Cloudflare Zero Trust Service Token (for cloud→local AI bridge)
-CF_CLIENT_ID = os.getenv("CF_ACCESS_CLIENT_ID", "") or os.getenv("CF-Access-Client-Id", "") or os.getenv("CF_Access_Client_Id", "")
-CF_CLIENT_SECRET = os.getenv("CF_ACCESS_CLIENT_SECRET", "") or os.getenv("CF-Access-Client-Secret", "") or os.getenv("CF_Access_Client_Secret", "")
+# Cloudflare Configuration
+CF_CLIENT_ID = os.getenv("CF_ACCESS_CLIENT_ID", "")
+CF_CLIENT_SECRET = os.getenv("CF_ACCESS_CLIENT_SECRET", "")
+CF_AIG_TOKEN = os.getenv("CF_AIG_TOKEN", "") # Optional: API Token for AI Gateway
 
 def get_cf_headers():
-    """Returns Cloudflare Access auth headers if configured."""
+    """Returns Cloudflare Access auth headers."""
+    headers = {}
     if CF_CLIENT_ID and CF_CLIENT_SECRET:
-        return {
-            "CF-Access-Client-Id": CF_CLIENT_ID,
-            "CF-Access-Client-Secret": CF_CLIENT_SECRET
-        }
-    return {}
+        headers["CF-Access-Client-Id"] = CF_CLIENT_ID
+        headers["CF-Access-Client-Secret"] = CF_CLIENT_SECRET
+    if CF_AIG_TOKEN:
+        headers["Authorization"] = f"Bearer {CF_AIG_TOKEN}"
+    headers["Content-Type"] = "application/json"
+    return headers
 
-
-# ================= OLLAMA =================
-def ollama_ok():
+def call_ai_api(prompt, model=None, system_prompt=None, timeout=30):
+    """
+    Unified AI call handler. 
+    Supports Ollama (/api/generate) and OpenAI-compatible (/v1/chat/completions).
+    """
+    target_model = model or OLLAMA_MODEL
+    headers = get_cf_headers()
+    
+    # Detect API type from URL
+    is_openai_compat = "/v1" in OLLAMA_BASE or "gateway.ai.cloudflare.com" in OLLAMA_BASE
+    
     try:
+        if is_openai_compat:
+            url = f"{OLLAMA_BASE}/chat/completions"
+            payload = {
+                "model": target_model,
+                "messages": [
+                    {"role": "system", "content": system_prompt or "You are a crypto terminal assistant."},
+                    {"role": "user", "content": prompt}
+                ],
+                "stream": False
+            }
+            r = requests.post(url, json=payload, headers=headers, timeout=timeout)
+            if r.ok:
+                return r.json()["choices"][0]["message"]["content"].strip(), None
+        else:
+            url = f"{OLLAMA_BASE}/api/generate"
+            payload = {
+                "model": target_model,
+                "prompt": f"{system_prompt}\n\n{prompt}" if system_prompt else prompt,
+                "stream": False
+            }
+            r = requests.post(url, json=payload, headers=headers, timeout=timeout)
+            if r.ok:
+                return r.json().get("response", "").strip(), None
+        
+        # Handle errors
+        error_msg = f"AI Error {r.status_code}: {r.text[:100]}"
+        return None, error_msg
+    except Exception as e:
+        return None, str(e)
+
+def ollama_ok():
+    """Checks if the AI service is reachable."""
+    try:
+        # For AI Gateway/OpenAI compat, we check /models or just a quick ping
+        if "gateway.ai.cloudflare.com" in OLLAMA_BASE:
+            return True # Assume OK if configured, or do a more expensive check later
         return requests.get(f"{OLLAMA_BASE}/api/tags", timeout=5, headers=get_cf_headers()).ok
     except:
         return False
@@ -507,34 +551,17 @@ def events():
 @app.route("/api/news/summary", methods=["POST"])
 def summary():
     data = request.get_json()
-
     if not data:
         return jsonify({"error": "Missing data"}), 400
 
-    if not ollama_ok():
-        return jsonify({"summary": "AI not available"})
-
-    try:
-        prompt = "Summarize crypto news in 10 words: " + data.get("title", "")
-
-        r = requests.post(
-            OLLAMA,
-            json={
-                "model": OLLAMA_MODEL,
-                "prompt": prompt,
-                "stream": False
-            },
-            headers=get_cf_headers(),
-            timeout=15
-        )
-
-        if r.ok:
-            return jsonify({"summary": r.json().get("response", "").strip()})
-
-    except:
-        pass
-
-    return jsonify({"summary": "Unavailable"})
+    title = data.get("title", "")
+    prompt = f"Summarize this crypto news headline in exactly 10 words: {title}"
+    
+    response, error = call_ai_api(prompt, timeout=15)
+    if response:
+        return jsonify({"summary": response})
+    
+    return jsonify({"summary": "AI summary currently unavailable"})
 
 
 @app.route("/api/ai/search", methods=["POST"])
@@ -546,68 +573,37 @@ def ai_search():
     if not query:
         return jsonify({"error": "Missing query"}), 400
 
-    if not ollama_ok():
-        return jsonify({"error": "Ollama not available"}), 503
+    system_prompt = f"You are a local crypto terminal assistant. Symbol context: {symbol or 'N/A'}."
+    
+    # Primary Call
+    response, error = call_ai_api(query, system_prompt=system_prompt, timeout=45)
+    
+    if response:
+        return jsonify({"answer": response, "model": OLLAMA_MODEL})
+    
+    # Fallback Call
+    if OLLAMA_FALLBACK_MODEL and OLLAMA_FALLBACK_MODEL != OLLAMA_MODEL:
+        fb_response, fb_error = call_ai_api(query, model=OLLAMA_FALLBACK_MODEL, system_prompt=system_prompt, timeout=45)
+        if fb_response:
+            return jsonify({
+                "answer": fb_response,
+                "model": OLLAMA_FALLBACK_MODEL,
+                "warning": error
+            })
 
-    prompt = f"""You are a local crypto terminal assistant.
-Answer briefly and clearly.
-Current symbol context: {symbol or 'N/A'}.
-User query: {query}
-"""
-    try:
-        r = requests.post(
-            OLLAMA,
-            json={
-                "model": OLLAMA_MODEL,
-                "prompt": prompt,
-                "stream": False
-            },
-            headers=get_cf_headers(),
-            timeout=45
-        )
-        if not r.ok:
-            details = ""
-            try:
-                payload = r.json()
-                details = payload.get("error") or str(payload)
-            except Exception:
-                details = (r.text or "").strip()
-            msg = f"Ollama request failed for model '{OLLAMA_MODEL}'"
-            if details:
-                msg += f": {details}"
-
-            # Fallback to a known local model when preferred model is unavailable.
-            if OLLAMA_FALLBACK_MODEL and OLLAMA_FALLBACK_MODEL != OLLAMA_MODEL:
-                try:
-                    r2 = requests.post(
-                        OLLAMA,
-                        json={
-                            "model": OLLAMA_FALLBACK_MODEL,
-                            "prompt": prompt,
-                            "stream": False
-                        },
-                        headers=get_cf_headers(),
-                        timeout=45
-                    )
-                    if r2.ok:
-                        return jsonify({
-                            "answer": r2.json().get("response", "").strip(),
-                            "model": OLLAMA_FALLBACK_MODEL,
-                            "warning": msg
-                        })
-                except Exception:
-                    pass
-
-            return jsonify({"error": msg}), 502
-        return jsonify({"answer": r.json().get("response", "").strip(), "model": OLLAMA_MODEL})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
+    return jsonify({"error": error or "AI request failed"}), 502
 
 
 @app.route("/api/ollama/status")
-def ollama_status():
+@app.route("/api/ai/status")
+def ai_status_check():
     ok = ollama_ok()
-    return jsonify({"available": ok, "message": "Running" if ok else "Not available", "model": OLLAMA_MODEL})
+    return jsonify({
+        "available": ok,
+        "mode": "Gateway/OpenAI" if "/v1" in OLLAMA_BASE or "gateway" in OLLAMA_BASE else "Local/Ollama",
+        "url": OLLAMA_BASE,
+        "model": OLLAMA_MODEL
+    })
 
 
 # ================= BOT API =================

@@ -5244,7 +5244,7 @@ class="${summaryClass}">${summary}</div>` : ''}
             });
 
             // Handle specific view initializations
-            if (tab === 'db') loadDBTables();
+
             if (tab === 'news') fetchTerminalNews('geopolitics');
             if (tab === 'analytics') updateHeatmap();
             if (tab === 'market') updateMarketDashboard();
@@ -6837,7 +6837,7 @@ onclick="toggleWatchlist('${coin.symbol}', event)">${isStarred ? '★' : '☆'}<
             if (tab === 'whale') icons[3]?.classList.add('active');
             if (tab === 'analytics') icons[4]?.classList.add('active');
             if (tab === 'bot') document.getElementById('btnBotView')?.classList.add('active');
-            if (tab === 'db') icons[6]?.classList.add('active'); // The new DB icon
+
         }
 
         async function loadDBTables() {

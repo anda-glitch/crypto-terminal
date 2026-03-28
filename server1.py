@@ -335,41 +335,32 @@ def health():
 
 
 # ================= DATABASE INTROSPECTION =================
-@app.route("/api/admin/db/tables")
-def db_tables():
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        tables = [row["name"] for row in cursor.fetchall() if row["name"] != "sqlite_sequence"]
-        conn.close()
-        return jsonify({"tables": tables})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+# @app.route("/api/admin/db/tables")
+# def db_tables():
+#     try:
+#         db = get_db()
+#         tables = db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+#         result = []
+#         for t in tables:
+#             count = db.execute(f"SELECT COUNT(*) FROM {t['name']}").fetchone()[0]
+#             result.append({"name": t["name"], "count": count})
+#         return jsonify({"tables": result})
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 50000
 
 
-@app.route("/api/admin/db/data")
-def db_data():
-    table = request.args.get("table")
-    limit = int(request.args.get("limit", 100))
-    if not table:
-        return jsonify({"error": "No table specified"}), 400
-    
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        # Secure table name check
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
-        if not cursor.fetchone():
-            conn.close()
-            return jsonify({"error": "Invalid table"}), 400
-            
-        cursor.execute(f"SELECT * FROM {table} LIMIT ?", (limit,))
-        rows = [dict(row) for row in cursor.fetchall()]
-        conn.close()
-        return jsonify({"table": table, "data": rows})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+# @app.route("/api/admin/db/data")
+# def db_data():
+#     table = request.args.get("table")
+#     if not table: return jsonify({"error": "No table"}), 400
+#     try:
+#         db = get_db()
+#         cursor = db.execute(f"SELECT * FROM {table} LIMIT 100")
+#         columns = [description[0] for description in cursor.description]
+#         rows = [list(row) for row in cursor.fetchall()]
+#         return jsonify({"columns": columns, "rows": rows})
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 50000
 
 
 

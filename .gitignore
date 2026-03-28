@@ -1,0 +1,32 @@
+# Local environment
+venv/
+.env
+
+# Database and state
+*.db
+*.db-journal
+*.db-wal
+*.sqlite
+
+# Logs
+logs/
+*.log
+server.log
+
+# Credentials and secrets (CRITICAL)
+config.yml
+client_secret_crypto.json
+*.json
+!client_secret.example.json
+
+# Tooling and caches
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+.idea/
+.vscode/
+
+# Backups
+*.bak
+*.tmp

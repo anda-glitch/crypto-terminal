@@ -1,0 +1,5 @@
+tunnel: <YOUR_TUNNEL_ID_HERE_UUID>
+credentials-file: /path/to/your/cloudflare/credentials/<YOUR_TUNNEL_ID>.json
+
+ingress:
+  - service: http://localhost:8080

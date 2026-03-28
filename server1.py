@@ -1,0 +1,1183 @@
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+import requests
+import feedparser
+import time
+import sqlite3
+import os
+from werkzeug.security import generate_password_hash, check_password_hash
+from concurrent.futures import ThreadPoolExecutor
+
+app = Flask(__name__)
+CORS(app)
+
+DB_PATH = "terminal.db"
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+@app.route("/")
+def index():
+    return open(os.path.join(BASE_DIR, "testcrypto.html")).read()
+
+def init_db():
+    conn = get_db()
+    cursor = conn.cursor()
+    # Users table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            email TEXT,
+            password TEXT,
+            wallet_address TEXT UNIQUE,
+            provider TEXT,
+            provider_id TEXT UNIQUE,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # MIGRATION: Ensure 'provider', 'provider_id', and 'email' columns exist if table was already created
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN email TEXT")
+    except sqlite3.OperationalError: pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN provider TEXT")
+    except sqlite3.OperationalError: pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN provider_id TEXT")
+    except sqlite3.OperationalError: pass
+
+    conn.commit()
+    # Watchlist table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS watchlist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            symbol TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    ''')
+    # Trades table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            symbol TEXT NOT NULL,
+            side TEXT NOT NULL,
+            price REAL NOT NULL,
+            amount REAL NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    ''')
+    # Fav Bots table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fav_bots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            bot_name TEXT NOT NULL,
+            config TEXT,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+BINANCE = "https://api.binance.com/api/v3"
+NEWS = []
+NEWS_TIME = 0
+EVENTS = []
+EVENTS_TIME = 0
+OLLAMA = "http://localhost:11434/api/generate"
+OLLAMA_MODEL = "minimax-m2.7:cloud"
+OLLAMA_FALLBACK_MODEL = "qwen2.5:3b"
+COINGECKO = "https://api.coingecko.com/api/v3"
+CG_CACHE = {}
+
+
+# ================= OLLAMA =================
+def ollama_ok():
+    try:
+        return requests.get("http://localhost:11434/api/tags", timeout=3).ok
+    except:
+        return False
+
+
+# ================= BINANCE API =================
+def api(path, params=None):
+    try:
+        r = requests.get(BINANCE + path, params=params, timeout=10)
+        return r.json(), None
+    except Exception as e:
+        return None, str(e)
+
+
+# ================= DETECT COINS =================
+def detect(text):
+    t = text.lower()
+    found = []
+    pairs = {
+        "BTC": "bitcoin btc",
+        "ETH": "ethereum eth",
+        "XRP": "ripple xrp",
+        "SOL": "solana sol",
+        "ADA": "cardano ada",
+        "DOGE": "dogecoin doge"
+    }
+    for s, words in pairs.items():
+        for w in words.split():
+            if w in t:
+                found.append(s)
+                break
+    return found
+
+
+# ================= RSS =================
+def rss(url, name):
+    try:
+        feed = feedparser.parse(url)
+        results = []
+        for e in feed.entries[:15]:
+            results.append({
+                "id": hash(e.link),
+                "title": e.title,
+                "url": e.link,
+                "source": name,
+                "published_at": e.get("published", ""),
+                "currencies": detect(e.title),
+                "votes": 0
+            })
+        return results
+    except:
+        return []
+
+
+# ================= CRYPTOPANIC =================
+def cp():
+    try:
+        r = requests.get(
+            "https://cryptopanic.com/api/free/v1/posts/",
+            params={
+                "auth_token": "public",
+                "currencies": "BTC,ETH,SOL",
+                "kind": "news",
+                "filter": "hot"
+            },
+            timeout=10
+        )
+        if r.ok:
+            results = []
+            for item in r.json().get("results", [])[:20]:
+                src = item.get("source", {})
+                currencies = item.get("currencies") or []
+                votes = item.get("votes") or {}
+                results.append({
+                    "id": item.get("id"),
+                    "title": item.get("title", ""),
+                    "url": item.get("url", ""),
+                    "source": src.get("title", "Unknown") if isinstance(src, dict) else "Unknown",
+                    "published_at": item.get("published_at", ""),
+                    "currencies": [c.get("code") for c in currencies if isinstance(c, dict) and c.get("code")],
+                    "votes": votes.get("positive", 0) - votes.get("negative", 0)
+                })
+            return results
+    except:
+        return []
+    return []
+
+
+# ================= MARKET EVENTS =================
+def impact_from_title(title):
+    t = (title or "").lower()
+    high = ["fed", "sec", "etf", "cpi", "rate", "ban", "hack", "liquidation"]
+    medium = ["listing", "upgrade", "partnership", "regulation", "outage"]
+    if any(k in t for k in high):
+        return 3
+    if any(k in t for k in medium):
+        return 2
+    return 1
+
+
+def format_hhmm(entry):
+    ts = entry.get("published_parsed") or entry.get("updated_parsed")
+    if not ts:
+        return "--:--"
+    return time.strftime("%H:%M", ts)
+
+
+def get_market_events():
+    global EVENTS, EVENTS_TIME
+
+    if EVENTS and (time.time() - EVENTS_TIME) < 300:
+        return EVENTS
+
+    feeds = [
+        ("https://www.federalreserve.gov/feeds/press_all.xml", "FED", "US"),
+        ("https://www.coindesk.com/arc/outboundfeeds/rss/", "CoinDesk", "CR"),
+        ("https://cointelegraph.com/rss", "CoinTelegraph", "CR"),
+    ]
+
+    events = []
+    for url, source, country in feeds:
+        try:
+            feed = feedparser.parse(url)
+            for e in feed.entries[:8]:
+                title = e.get("title", "").strip()
+                if not title:
+                    continue
+                events.append({
+                    "time": format_hhmm(e),
+                    "country": country,
+                    "name": title,
+                    "impact": impact_from_title(title),
+                    "source": source,
+                    "url": e.get("link", ""),
+                    "published_at": e.get("published", e.get("updated", ""))
+                })
+        except:
+            continue
+
+    events.sort(key=lambda x: (x.get("impact", 1), x.get("published_at", "")), reverse=True)
+    EVENTS = events[:12]
+    EVENTS_TIME = time.time()
+    return EVENTS
+
+
+# ================= GET NEWS =================
+def get_news():
+    global NEWS, NEWS_TIME
+
+    if NEWS and (time.time() - NEWS_TIME) < 300:
+        return NEWS
+
+    all_n = []
+
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        feeds = [
+            ("https://www.coindesk.com/arc/outboundfeeds/rss/", "CoinDesk"),
+            ("https://cointelegraph.com/rss", "CoinTelegraph"),
+            ("https://bitcoinist.com/feed/", "Bitcoinist")
+        ]
+        for url, name in feeds:
+            all_n.extend(ex.submit(rss, url, name).result() or [])
+
+    all_n.extend(cp() or [])
+
+    seen = set()
+    uniq = []
+    for n in all_n:
+        if n["url"] not in seen:
+            seen.add(n["url"])
+            uniq.append(n)
+
+    uniq.sort(key=lambda x: (x.get("votes", 0), x.get("published_at", "")), reverse=True)
+
+    NEWS = uniq
+    NEWS_TIME = time.time()
+
+    return NEWS
+
+# ================= COINGECKO API =================
+def get_cg(path, params=None):
+    global CG_CACHE
+    now = time.time()
+    cache_key = f"{path}_{str(params)}"
+    
+    if cache_key in CG_CACHE:
+        entry, exp = CG_CACHE[cache_key]
+        if now < exp:
+            return entry, None
+
+    try:
+        r = requests.get(COINGECKO + path, params=params, timeout=12)
+        if r.ok:
+            data = r.json()
+            CG_CACHE[cache_key] = (data, now + 300) # 5 min cache
+            return data, None
+        return None, f"CG Error: {r.status_code}"
+    except Exception as e:
+        return None, str(e)
+
+
+# ================= ROUTES =================
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok", "ollama": ollama_ok()})
+
+
+# ================= DATABASE INTROSPECTION =================
+@app.route("/api/admin/db/tables")
+def db_tables():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tables = [row["name"] for row in cursor.fetchall() if row["name"] != "sqlite_sequence"]
+        conn.close()
+        return jsonify({"tables": tables})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/admin/db/data")
+def db_data():
+    table = request.args.get("table")
+    limit = int(request.args.get("limit", 100))
+    if not table:
+        return jsonify({"error": "No table specified"}), 400
+    
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        # Secure table name check
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({"error": "Invalid table"}), 400
+            
+        cursor.execute(f"SELECT * FROM {table} LIMIT ?", (limit,))
+        rows = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify({"table": table, "data": rows})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
+@app.route("/api/ticker/24hr")
+def ticker():
+    default_symbols = "BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT,ADAUSDT,DOTUSDT,AVAXUSDT,DOGEUSDT,LINKUSDT"
+
+    syms = request.args.get("symbols", default_symbols)
+    syms = [s.strip().upper() for s in syms.split(",")]
+
+    data, err = api("/ticker/24hr", {
+        "symbols": '["' + '","'.join(syms) + '"]'
+    })
+
+    if err:
+        return jsonify({"error": err}), 502
+
+    return jsonify(data)
+
+
+@app.route("/api/ticker/top")
+def top():
+    syms = [
+        "BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","ADAUSDT",
+        "DOTUSDT","AVAXUSDT","DOGEUSDT","LINKUSDT","UNIUSDT",
+        "ATOMUSDT","MATICUSDT","NEARUSDT","APTUSDT","ARBUSDT",
+        "OPUSDT","SUIUSDT"
+    ]
+
+    data, err = api("/ticker/24hr", {
+        "symbols": '["' + '","'.join(syms) + '"]'
+    })
+
+    if err:
+        return jsonify({"error": err}), 502
+
+    results = []
+    for item in data:
+        last = float(item.get("lastPrice", 0))
+        high = float(item.get("highPrice", 0))
+        low = float(item.get("lowPrice", 0))
+        vol = float(item.get("quoteVolume", 0))
+        
+        # Volatility Index: (High - Low) / Low * 100
+        volatility = ((high - low) / low * 100) if low > 0 else 0
+        
+        results.append({
+            "symbol": item.get("symbol"),
+            "lastPrice": last,
+            "volume": vol,
+            "volatility": round(volatility, 2),
+            "priceChangePercent": float(item.get("priceChangePercent", 0))
+        })
+
+    # Sort by 24h USD Volume (Market Action)
+    sorted_by_vol = sorted(results, key=lambda x: x["volume"], reverse=True)
+
+    return jsonify(sorted_by_vol[:20])
+
+
+@app.route("/api/klines")
+def klines():
+    sym = request.args.get("symbol", "BTCUSDT").upper()
+    interval = request.args.get("interval", "1h")
+    limit = int(request.args.get("limit", 300))
+
+    data, err = api("/klines", {
+        "symbol": sym,
+        "interval": interval,
+        "limit": limit
+    })
+
+    if err:
+        return jsonify({"error": err}), 502
+
+    return jsonify([
+        {
+            "time": c[0],
+            "open": float(c[1]),
+            "high": float(c[2]),
+            "low": float(c[3]),
+            "close": float(c[4]),
+            "volume": float(c[5])
+        }
+        for c in data
+    ])
+
+
+@app.route("/api/news")
+def news():
+    try:
+        limit = int(request.args.get("limit", 25))
+        all_news = get_news()
+        return jsonify({"news": all_news[:limit], "total": len(all_news)})
+    except Exception as e:
+        return jsonify({"news": [], "total": 0, "error": str(e)}), 200
+
+
+@app.route("/api/news/sentiment")
+def sentiment():
+    all_n = get_news()
+
+    bullish_words = ["bullish","pump","surge","rally","moon","growth","etf"]
+    bearish_words = ["bearish","dump","crash","decline","ban","hack"]
+
+    bc = sum(1 for n in all_n[:20] if any(w in n["title"].lower() for w in bullish_words))
+    rc = sum(1 for n in all_n[:20] if any(w in n["title"].lower() for w in bearish_words))
+
+    total = bc + rc
+    score = 50 if total == 0 else int((bc / total) * 100)
+
+    sentiment = "Neutral"
+    if score > 60:
+        sentiment = "Bullish"
+    elif score < 40:
+        sentiment = "Bearish"
+
+    return jsonify({
+        "sentiment": sentiment,
+        "score": score,
+        "bullish_count": bc,
+        "bearish_count": rc
+    })
+
+
+@app.route("/api/events")
+def events():
+    limit = int(request.args.get("limit", 8))
+    return jsonify({"events": get_market_events()[:limit]})
+
+
+@app.route("/api/news/summary", methods=["POST"])
+def summary():
+    data = request.get_json()
+
+    if not data:
+        return jsonify({"error": "Missing data"}), 400
+
+    if not ollama_ok():
+        return jsonify({"summary": "AI not available"})
+
+    try:
+        prompt = "Summarize crypto news in 10 words: " + data.get("title", "")
+
+        r = requests.post(
+            OLLAMA,
+            json={
+                "model": OLLAMA_MODEL,
+                "prompt": prompt,
+                "stream": False
+            },
+            timeout=15
+        )
+
+        if r.ok:
+            return jsonify({"summary": r.json().get("response", "").strip()})
+
+    except:
+        pass
+
+    return jsonify({"summary": "Unavailable"})
+
+
+@app.route("/api/ai/search", methods=["POST"])
+def ai_search():
+    data = request.get_json() or {}
+    query = (data.get("query") or "").strip()
+    symbol = (data.get("symbol") or "").strip().upper()
+
+    if not query:
+        return jsonify({"error": "Missing query"}), 400
+
+    if not ollama_ok():
+        return jsonify({"error": "Ollama not available"}), 503
+
+    prompt = f"""You are a local crypto terminal assistant.
+Answer briefly and clearly.
+Current symbol context: {symbol or 'N/A'}.
+User query: {query}
+"""
+    try:
+        r = requests.post(
+            OLLAMA,
+            json={
+                "model": OLLAMA_MODEL,
+                "prompt": prompt,
+                "stream": False
+            },
+            timeout=45
+        )
+        if not r.ok:
+            details = ""
+            try:
+                payload = r.json()
+                details = payload.get("error") or str(payload)
+            except Exception:
+                details = (r.text or "").strip()
+            msg = f"Ollama request failed for model '{OLLAMA_MODEL}'"
+            if details:
+                msg += f": {details}"
+
+            # Fallback to a known local model when preferred model is unavailable.
+            if OLLAMA_FALLBACK_MODEL and OLLAMA_FALLBACK_MODEL != OLLAMA_MODEL:
+                try:
+                    r2 = requests.post(
+                        OLLAMA,
+                        json={
+                            "model": OLLAMA_FALLBACK_MODEL,
+                            "prompt": prompt,
+                            "stream": False
+                        },
+                        timeout=45
+                    )
+                    if r2.ok:
+                        return jsonify({
+                            "answer": r2.json().get("response", "").strip(),
+                            "model": OLLAMA_FALLBACK_MODEL,
+                            "warning": msg
+                        })
+                except Exception:
+                    pass
+
+            return jsonify({"error": msg}), 502
+        return jsonify({"answer": r.json().get("response", "").strip(), "model": OLLAMA_MODEL})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route("/api/ollama/status")
+def ollama_status():
+    ok = ollama_ok()
+    return jsonify({"available": ok, "message": "Running" if ok else "Not available", "model": OLLAMA_MODEL})
+
+
+# ================= BOT API =================
+@app.route("/api/bot/status")
+def bot_status():
+    return jsonify({
+        "bots": [
+            {"id": "rsi_bot", "name": "RSI Scalper", "status": "active", "profit": "+2.4%"},
+            {"id": "grid_bot", "name": "Grid Trader", "status": "inactive", "profit": "0.0%"},
+            {"id": "arbitrage", "name": "Arb Finder", "status": "error", "profit": "-0.5%"}
+        ]
+    })
+
+
+@app.route("/api/bot/signals")
+def bot_signals():
+    # Simulated signals based on randomness for demo
+    import random
+    symbols = ["BTC", "ETH", "SOL", "AVAX"]
+    signals = []
+    for s in symbols:
+        val = random.randint(0, 100)
+        sig = "NEUTRAL"
+        if val > 70: sig = "BUY"
+        elif val < 30: sig = "SELL"
+        signals.append({"symbol": s, "rsi": val, "signal": sig})
+    return jsonify({"signals": signals})
+
+
+@app.route("/api/bot/backtest", methods=["POST"])
+def bot_backtest():
+    data = request.get_json() or {}
+    strategy = data.get("strategy", "Crossover")
+    symbol = data.get("symbol", "BTCUSDT")
+    days = int(data.get("days", 30))
+    
+    # Mock backtest result
+    import random
+    profit = random.uniform(-5.0, 15.0)
+    trades = random.randint(10, 50)
+    win_rate = random.randint(40, 75)
+    
+    return jsonify({
+        "strategy": strategy,
+        "symbol": symbol,
+        "days": days,
+        "profit_pct": round(profit, 2),
+        "total_trades": trades,
+        "win_rate": f"{win_rate}%",
+        "max_drawdown": f"-{round(random.uniform(1, 8), 1)}%"
+    })
+
+
+@app.route("/api/bot/logs")
+def bot_logs():
+    return jsonify({
+        "logs": [
+            {"time": "09:45:12", "bot": "RSI Scalper", "msg": "Buy signal detected on BTC/USDT"},
+            {"time": "09:40:05", "bot": "RSI Scalper", "msg": "Closed position ETH/USDT +1.2%"},
+            {"time": "09:30:00", "bot": "System", "msg": "Market analyzer synchronized"},
+            {"time": "09:12:44", "bot": "System", "msg": "Strategy engine started"}
+        ]
+    })
+
+
+# ================= MARKET TERMINAL API =================
+@app.route("/api/market/global")
+def market_global():
+    data, err = get_cg("/global")
+    if err:
+        return jsonify({
+            "total_mcap": "$2.64T", "mcap_change": "+1.2%", "vol_24h": "$84.2B",
+            "btc_dom": "52.1%", "eth_dom": "17.2%", "active_coins": "12,430",
+            "warning": "Using fallback data due to CG error"
+        })
+    
+    g = data.get("data", {})
+    mcap = sum(g.get("total_market_cap", {}).values())
+    vol = sum(g.get("total_volume", {}).values())
+    
+    def fmt(n):
+        if n > 1e12: return f"${round(n/1e12, 2)}T"
+        if n > 1e9: return f"${round(n/1e9, 2)}B"
+        return f"${round(n/1e6, 2)}M"
+
+    return jsonify({
+        "total_mcap": fmt(g.get("total_market_cap", {}).get("usd", 2600000000000)),
+        "mcap_change": f"{round(g.get('market_cap_change_percentage_24h_usd', 0), 1)}%",
+        "vol_24h": fmt(g.get("total_volume", {}).get("usd", 80000000000)),
+        "btc_dom": f"{round(g.get('market_cap_percentage', {}).get('btc', 52), 1)}%",
+        "eth_dom": f"{round(g.get('market_cap_percentage', {}).get('eth', 17), 1)}%",
+        "active_coins": f"{g.get('active_cryptocurrencies', 0):,}"
+    })
+
+@app.route("/api/market/list")
+def market_list():
+    cat = request.args.get("category", "all").lower()
+    mapping = {
+        "defi": "decentralized-finance-defi",
+        "layer1": "layer-1",
+        "infrastructure": "infrastructure",
+        "memes": "meme-token",
+        "ai": "artificial-intelligence",
+        "gaming": "gaming",
+        "nft": "nft",
+        "storage": "storage",
+        "dex": "decentralized-exchange"
+    }
+    
+    cg_cat = mapping.get(cat)
+    params = {
+        "vs_currency": "usd",
+        "order": "market_cap_desc",
+        "per_page": 100,
+        "page": 1,
+        "sparkline": True,
+        "price_change_percentage": "24h,7d"
+    }
+    if cg_cat:
+        params["category"] = cg_cat
+
+    data, err = get_cg("/coins/markets", params)
+    if err: return jsonify({"error": err}), 502
+
+    results = []
+    for coin in data:
+        symbol = coin.get("symbol", "").upper()
+        # Map to Binance ticker for chart switching
+        binance_sym = symbol + "USDT"
+        
+        # Get sparkline
+        spark = coin.get("sparkline_in_7d", {}).get("price", [])
+        
+        results.append({
+            "symbol": binance_sym,
+            "name": coin.get("name", ""),
+            "price": coin.get("current_price", 0),
+            "chg_24h": round(coin.get("price_change_percentage_24h", 0) or 0, 2),
+            "chg_7d": round(coin.get("price_change_percentage_7d_in_currency", 0) or 0, 2),
+            "volume": coin.get("total_volume", 0),
+            "mcap": coin.get("market_cap", 0),
+            "rank": coin.get("market_cap_rank", 0),
+            "sparkline": spark
+        })
+
+    return jsonify(results)
+
+
+# ================= WHALE WATCH API =================
+@app.route("/api/wallets/top")
+def wallets_top():
+    # Curated Top 50 Wallets (BTC & ETH)
+    wallets = [
+        {"rank": 1, "owner": "Binance-Cold", "addr": "34xp4vRoCGJym3xR7yCVPFHoCNxv4Twseo", "balance": "248,597 BTC", "val": "$16.4B", "last_active": "2h ago", "type": "btc"},
+        {"rank": 2, "owner": "Bitfinex-Cold", "addr": "bc1qgdjqv0c7q38g3yK7p7P9v3kE2X4W8F6v5Z", "balance": "178,010 BTC", "val": "$11.7B", "last_active": "5h ago", "type": "btc"},
+        {"rank": 3, "owner": "MicroStrategy", "addr": "1LQoWist8KueUXUAtX4fP8i7LDF5qQ3W", "balance": "158,245 BTC", "val": "$10.4B", "last_active": "1d ago", "type": "btc"},
+        {"rank": 4, "owner": "Mt. Gox Hack", "addr": "1FeexV6bAHb8ybZjqQMjJrcCrH41xXWM", "balance": "79,957 BTC", "val": "$5.2B", "last_active": "11yrs ago", "type": "btc"},
+        {"rank": 5, "owner": "Satoshi-Era", "addr": "1A1zP1eP5QGefi2DMPTfTL5SLmv7Divf", "balance": "68,000 BTC", "val": "$4.5B", "last_active": "15yrs ago", "type": "btc"},
+        {"rank": 6, "owner": "Beacon-Deposit", "addr": "0x00000000219ab540356cBB839Cbe05303d7705Fa", "balance": "32,450,120 ETH", "val": "$105.2B", "last_active": "1m ago", "type": "eth"},
+        {"rank": 7, "owner": "Arbitrum-Bridge", "addr": "0x8315177aB297bA92A06054cE80a67Ed4DBd7ed3a", "balance": "2,840,000 ETH", "val": "$9.2B", "last_active": "12m ago", "type": "eth"},
+        {"rank": 8, "owner": "Kraken-Cold", "addr": "0x2B1a8D9345D14E1BCEa2C6f05F4A87C1f7D6B", "balance": "1,240,000 ETH", "val": "$4.0B", "last_active": "4h ago", "type": "eth"},
+        # ... Adding more to reach approx Top 50 for frontend rendering 
+    ]
+    # Filler for Top 50 demo
+    for i in range(len(wallets)+1, 51):
+        chain = "eth" if i % 2 == 0 else "btc"
+        wallets.append({
+            "rank": i, "owner": f"Unknown Whale #{i}", "addr": f"0x{i}...{i*7}", "balance": f"{50000-i*100:,.0f} {chain.upper()}",
+            "val": f"${(50000-i*100)*0.065:,.1f}M", "last_active": f"{i%24}h ago", "type": chain
+        })
+    return jsonify(wallets)
+
+@app.route("/api/wallets/institutions")
+def wallets_institutions():
+    return jsonify([
+        {"name": "BlackRock (IBIT)", "ticker": "IBIT", "inflow": "+$245.2M", "total": "$22.4B", "status": "ACCUMULATING", "vol": "$1.4B", "position": "310,230 BTC", "stance": "LONG"},
+        {"name": "Fidelity (FBTC)", "ticker": "FBTC", "inflow": "+$182.1M", "total": "$12.8B", "status": "ACCUMULATING", "vol": "$940M", "position": "180,420 BTC", "stance": "LONG"},
+        {"name": "MicroStrategy", "ticker": "MSTR", "inflow": "+$0", "total": "$10.4B", "status": "HOLDING", "vol": "$15M", "position": "214,400 BTC", "stance": "HOLD"},
+        {"name": "Grayscale (GBTC)", "ticker": "GBTC", "inflow": "-$42.5M", "total": "$15.8B", "status": "DISTRIBUTING", "vol": "$820M", "position": "260,110 BTC", "stance": "SHORT"},
+        {"name": "Ark Invest", "ticker": "ARKB", "inflow": "+$12.4M", "total": "$2.1B", "status": "ACCUMULATING", "vol": "$110M", "position": "38,500 BTC", "stance": "LONG"}
+    ])
+
+@app.route("/api/dashboard/intel")
+def dashboard_intel():
+    return jsonify({
+        "flow": {
+            "assets": [
+                {"coin": "BTC", "valStr": "-$240.5M", "pct": -82, "status": "Accumulation", "actor": "WHALES", "trend7d": "7D: -$1.1B"},
+                {"coin": "ETH", "valStr": "+$84.2M", "pct": 45, "status": "Distribution", "actor": "RETAIL", "trend7d": "7D: +$300M"},
+                {"coin": "SOL", "valStr": "-$12.5M", "pct": -20, "status": "Accumulation", "actor": "WHALES", "trend7d": "7D: -$50M"}
+            ],
+            "stablecoin": {"label": "Dry Powder", "valStr": "$1.2B", "pct": 85, "status": "Deployable"}
+        },
+        "liquidity": {
+            "book_depth": "$4.2B",
+            "buy_wall": "$62,400 (Top)",
+            "sell_wall": "$68,000 (Top)"
+        },
+        "mined": [
+            {"coin": "BTC", "pct": 93.8, "supply": "19.7M / 21M", "hash": "SHA-256"},
+            {"coin": "ETH", "pct": 100, "supply": "120M / No Cap", "hash": "Ethash/PoS"},
+            {"coin": "DOGE", "pct": 100, "supply": "144B / No Cap", "hash": "Scrypt"},
+            {"coin": "LTC", "pct": 89.2, "supply": "74.5M / 84M", "hash": "Scrypt"},
+            {"coin": "BCH", "pct": 94.1, "supply": "19.7M / 21M", "hash": "SHA-256d"}
+        ],
+        "health": {
+            "hashrate": "620.4 EH/s",
+            "active_addr": "840.2K",
+            "avg_fee": "$2.40"
+        }
+    })
+
+@app.route("/api/wallets/alerts")
+def wallets_alerts():
+    return jsonify({
+        "alerts": [
+            {"time": "12:15", "from": "Unknown", "to": "Binance", "val": "1,240 BTC ($81.2M)", "action": "INFLOW"},
+            {"time": "12:05", "from": "Coinbase", "to": "Unknown Whale", "val": "3,400 ETH ($11.2M)", "action": "OUTFLOW"},
+            {"time": "11:58", "from": "Unknown", "to": "Coinbase", "val": "540 BTC ($36.4M)", "action": "INFLOW"},
+            {"time": "11:45", "from": "Binance", "to": "Unknown", "val": "24,500 ETH ($79.6M)", "action": "OUTFLOW"},
+            {"time": "11:12", "from": "Unknown", "to": "Unknown Whale", "val": "500 BTC ($32.8M)", "action": "MOVE"}
+        ],
+        "exchange_flows": [
+            {"exchange": "Binance", "net_24h": "-$142M", "sentiment": "BULLISH", "vol_24h": "$18.2B", "funding": "0.015%", "oi": "$6.4B", "irate": "4.2%"},
+            {"exchange": "Coinbase", "net_24h": "+$45M", "sentiment": "BEARISH", "vol_24h": "$3.1B", "funding": "0.010%", "oi": "$1.2B", "irate": "3.5%"},
+            {"exchange": "Kraken", "net_24h": "-$22M", "sentiment": "BULLISH", "vol_24h": "$1.8B", "funding": "0.011%", "oi": "$800M", "irate": "3.8%"},
+            {"exchange": "Bybit", "net_24h": "+$12M", "sentiment": "BEARISH", "vol_24h": "$5.4B", "funding": "0.018%", "oi": "$3.1B", "irate": "4.5%"}
+        ]
+    })
+
+# ================= NEWS TERMINAL API (LIVE WIRES) =================
+TERMINAL_NEWS_CACHE = {}
+TERMINAL_NEWS_TIME = {}
+
+def get_impact_label(title):
+    t = (title or "").lower()
+    # High impact keywords
+    high = ["fed", "sec", "cpi", "rate", "ban", "hack", "liquidation", "crash", "war", "hike", "halt"]
+    # Medium impact keywords
+    medium = ["listing", "upgrade", "partnership", "regulation", "outage", "earnings", "partnership", "acquire"]
+    
+    if any(k in t for k in high): return "HIGH"
+    if any(k in t for k in medium): return "MEDIUM"
+    return "LOW"
+
+@app.route("/api/news/terminal")
+def news_terminal():
+    cat = request.args.get('category', 'crypto')
+    now = time.time()
+    
+    # 5-minute memory cache per category
+    if cat in TERMINAL_NEWS_CACHE and (now - TERMINAL_NEWS_TIME.get(cat, 0)) < 300:
+        return jsonify(TERMINAL_NEWS_CACHE[cat])
+
+    feeds = {
+        "geopolitics": [
+            ("https://www.federalreserve.gov/feeds/press_all.xml", "FED"),
+            ("https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=401&id=100003114", "CNBC World"),
+            ("http://feeds.bbci.co.uk/news/world/rss.xml", "BBC Global"),
+            ("https://www.reuters.com/arc/outboundfeeds/rss/", "Reuters")
+        ],
+        "general": [
+            ("https://techcrunch.com/feed/", "TechCrunch"),
+            ("https://www.theverge.com/rss/index.xml", "The Verge"),
+            ("https://feeds.npr.org/1019/rss.xml", "NPR Tech"),
+            ("https://wired.com/feed/rss", "Wired")
+        ],
+        "crypto": [
+            ("https://www.coindesk.com/arc/outboundfeeds/rss/", "CoinDesk"),
+            ("https://cointelegraph.com/rss", "CoinTelegraph"),
+            ("https://blockworks.co/feed", "Blockworks"),
+            ("https://cryptopanic.com/api/free/v1/posts/?auth_token=public&filter=hot", "CryptoPanic")
+        ]
+    }
+
+    selected_feeds = feeds.get(cat, [])
+    aggregated = []
+
+    def fetch_feed(url, source_name):
+        try:
+            # Special case for CryptoPanic API if URL is recognized
+            if "cryptopanic.com" in url:
+                r = requests.get(url, timeout=5)
+                if r.ok:
+                    items = r.json().get("results", [])[:10]
+                    return [{
+                        "time": time.strftime("%H:%M"),
+                        "title": i.get("title"),
+                        "impact": get_impact_label(i.get("title")),
+                        "desc": f"Source: {source_name} Aggregator. Trending Market Sentiment.",
+                        "id": "BTC" if "BTC" in (i.get("title") or "").upper() else ("ETH" if "ETH" in (i.get("title") or "").upper() else None)
+                    } for i in items]
+                return []
+            
+            # Standard RSS processing
+            feed = feedparser.parse(url)
+            results = []
+            for entry in feed.entries[:8]:
+                title = entry.get("title", "").strip()
+                desc = entry.get("summary", "") or entry.get("description", "")
+                # Clean HTML tags from description
+                desc = desc.split('<')[0] if '<' in desc else desc
+                desc = desc[:150] + "..." if len(desc) > 150 else desc
+                
+                # Format time
+                ts = entry.get("published_parsed") or entry.get("updated_parsed")
+                time_str = time.strftime("%H:%M", ts) if ts else time.strftime("%H:%M")
+                
+                results.append({
+                    "time": time_str,
+                    "title": title,
+                    "impact": get_impact_label(title),
+                    "desc": desc,
+                    "id": "BTC" if ("BITCOIN" in title.upper() or "BTC" in title.upper()) else ("ETH" if ("ETHEREUM" in title.upper() or "ETH" in title.upper()) else None)
+                })
+            return results
+        except Exception as e:
+            print(f"Feed error ({source_name}): {e}")
+            return []
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(fetch_feed, f[0], f[1]) for f in selected_feeds]
+        for future in futures:
+            aggregated.extend(future.result())
+
+    # Sort by time (most recent first)
+    aggregated.sort(key=lambda x: x["time"], reverse=True)
+    
+    # Store in cache
+    TERMINAL_NEWS_CACHE[cat] = aggregated
+    TERMINAL_NEWS_TIME[cat] = now
+    
+    return jsonify(aggregated)
+
+@app.route("/api/ai/bias")
+def ai_bias():
+    prompt = """You are a Bloomberg Crypto Terminal AI Engine. 
+Context: BTC price action holds $66K. Exchange net flows show -$240M (accumulation). Major liquidity sell wall sits at $68K. Recent liquidations are dominated by leveraged SHORTS.
+Task: Provide an ultra-condensed, highly technical 3-sentence market bias evaluation for high-frequency day traders. Declare an overarching bias (BULLISH, BEARISH, or NEUTRAL). Keep it clinical and data-driven."""
+    
+    try:
+        resp = requests.post("http://localhost:11434/api/generate", json={
+            "model": "minimax-2.7:cloud",
+            "prompt": prompt,
+            "stream": False
+        }, timeout=15)
+        
+        if resp.status_code == 200:
+            return jsonify({"status": "success", "bias": resp.json().get("response", "No response generated by model.")})
+        else:
+            return jsonify({"status": "error", "message": f"Ollama HTTP {resp.status_code}"}), 500
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": "Ollama connection failed. Is localhost:11434 running?"}), 503
+
+# ================= AUTH & USER PERSISTENCE =================
+@app.route("/api/auth/register", methods=["POST"])
+def register():
+    data = request.json
+    u, e, p = data.get("username"), data.get("email"), data.get("password")
+    if not u or not p: return jsonify({"error": "Missing fields"}), 400
+    
+    conn = get_db()
+    try:
+        conn.execute("INSERT INTO users (username, email, password) VALUES (?, ?, ?)", 
+                     (u, e, generate_password_hash(p)))
+        conn.commit()
+        return jsonify({"success": True})
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "User already exists"}), 400
+    finally:
+        conn.close()
+
+@app.route("/api/auth/login", methods=["POST"])
+def login():
+    data = request.json
+    u, p = data.get("username"), data.get("password")
+    conn = get_db()
+    user = conn.execute("SELECT * FROM users WHERE username = ?", (u,)).fetchone()
+    conn.close()
+    
+    if user and check_password_hash(user["password"], p):
+        # In a real app, use JWT. For this local demo, we'll return the user_id as a 'token'.
+        return jsonify({"success": True, "token": user["id"], "username": user["username"]})
+    return jsonify({"error": "Invalid credentials"}), 401
+
+@app.route("/api/auth/wallet", methods=["POST"])
+def wallet_login():
+    data = request.json
+    addr = data.get("address") # 0x...
+    if not addr: return jsonify({"error": "Missing wallet address"}), 400
+    
+    conn = get_db()
+    user = conn.execute("SELECT * FROM users WHERE wallet_address = ?", (addr,)).fetchone()
+    
+    if not user:
+        # Register new wallet-based user
+        username = addr[:6] + "..." + addr[-4:]
+        try:
+            cur = conn.execute("INSERT INTO users (username, wallet_address) VALUES (?, ?)", (username, addr))
+            conn.commit()
+            user_id = cur.lastrowid
+        except sqlite3.IntegrityError:
+            # Race condition or user exists
+            user = conn.execute("SELECT * FROM users WHERE wallet_address = ?", (addr,)).fetchone()
+            user_id = user["id"]
+            username = user["username"]
+        else:
+            user_id = user_id
+    else:
+        user_id = user["id"]
+        username = user["username"]
+        
+    conn.close()
+    return jsonify({"success": True, "token": user_id, "username": username, "method": "wallet"})
+
+@app.route("/api/auth/social/<provider>")
+def social_login_gateway(provider):
+    # Simulator: In a real app, this redirects to Google/GitHub/Facebook OAuth URL.
+    # Here, we redirect to a simulated 'External Provider' page.
+    return f"""
+    <html>
+        <body style="background:#000; color:#4AF6C3; font-family:monospace; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh;">
+            <h2>{provider.upper()} IDENTITY HANDSHAKE</h2>
+            <p>Redirecting to terminal callback in 2 seconds...</p>
+            <div style="border:1px solid #4AF6C3; width:200px; height:10px;"><div style="background:#4AF6C3; width:50%; height:100%;"></div></div>
+            <script>
+                setTimeout(() => {{
+                    window.location.href = '/api/auth/callback/{provider}?code=mock_code_123&state=abc';
+                }}, 2000);
+            </script>
+        </body>
+    </html>
+    """
+
+@app.route("/api/auth/callback/<provider>")
+def social_callback(provider):
+    # Process the mock identity token
+    provider_id = f"social_{provider}_789"
+    username = f"{provider}_Trader"
+    
+    conn = get_db()
+    user = conn.execute("SELECT * FROM users WHERE provider = ? AND provider_id = ?", (provider, provider_id)).fetchone()
+    
+    if not user:
+        # Register new federated user
+        try:
+            cur = conn.execute("INSERT INTO users (username, provider, provider_id) VALUES (?, ?, ?)", (username, provider, provider_id))
+            conn.commit()
+            user_id = cur.lastrowid
+        except sqlite3.IntegrityError:
+            user = conn.execute("SELECT * FROM users WHERE provider = ? AND provider_id = ?", (provider, provider_id)).fetchone()
+            user_id = user["id"]
+    else:
+        user_id = user["id"]
+        username = user["username"]
+        
+    conn.close()
+    # In this simulator, we redirect back to the frontend with the token
+    return f"""
+    <script>
+        localStorage.setItem('bt_token', '{user_id}');
+        localStorage.setItem('bt_user', '{username}');
+        window.location.href = '{request.host_url}';
+    </script>
+    """
+
+@app.route("/api/user/watchlist", methods=["GET", "POST"])
+def user_watchlist():
+    user_id = request.headers.get("Authorization")
+    if not user_id: return jsonify({"error": "Unauthorized"}), 401
+    
+    conn = get_db()
+    if request.method == "POST":
+        symbols = request.json.get("symbols", [])
+        conn.execute("DELETE FROM watchlist WHERE user_id = ?", (user_id,))
+        for s in symbols:
+            conn.execute("INSERT INTO watchlist (user_id, symbol) VALUES (?, ?)", (user_id, s))
+        conn.commit()
+    
+    rows = conn.execute("SELECT symbol FROM watchlist WHERE user_id = ?", (user_id,)).fetchall()
+    conn.close()
+    return jsonify([row["symbol"] for row in rows])
+
+@app.route("/api/user/trades", methods=["GET", "POST"])
+def user_trades():
+    user_id = request.headers.get("Authorization")
+    if not user_id: return jsonify({"error": "Unauthorized"}), 401
+    
+    conn = get_db()
+    if request.method == "POST":
+        t = request.json
+        conn.execute("INSERT INTO trades (user_id, symbol, side, price, amount) VALUES (?, ?, ?, ?, ?)",
+                     (user_id, t["symbol"], t["side"], t["price"], t["amount"]))
+        conn.commit()
+    
+    rows = conn.execute("SELECT * FROM trades WHERE user_id = ? ORDER BY timestamp DESC", (user_id,)).fetchall()
+    conn.close()
+    return jsonify([dict(row) for row in rows])
+
+@app.route("/api/user/bots", methods=["GET", "POST"])
+def user_bots():
+    user_id = request.headers.get("Authorization")
+    if not user_id: return jsonify({"error": "Unauthorized"}), 401
+    
+    conn = get_db()
+    if request.method == "POST":
+        b = request.json
+        conn.execute("INSERT INTO fav_bots (user_id, bot_name, config) VALUES (?, ?, ?)",
+                     (user_id, b["name"], b["config"]))
+        conn.commit()
+    
+    rows = conn.execute("SELECT * FROM fav_bots WHERE user_id = ?", (user_id,)).fetchall()
+    conn.close()
+    return jsonify([dict(row) for row in rows])
+
+GOOGLE_CLIENT_ID = "294364190338-np9qurh35idekm5lemiffpg8nodncpja.apps.googleusercontent.com"
+
+@app.route("/api/auth/google", methods=["POST"])
+def google_auth():
+    data = request.json
+    id_token = data.get("credential")
+    if not id_token: return jsonify({"error": "Missing Google Token"}), 400
+    
+    # Verify token with Google's tokeninfo endpoint
+    try:
+        resp = requests.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}", timeout=10)
+        user_info = resp.json()
+        
+        if "error" in user_info:
+            print(f"❌ Google Token Verification Error: {user_info.get('error_description', 'No description')}")
+            return jsonify({"error": f"Invalid Google Token: {user_info.get('error')}"}), 401
+            
+        # Security: Verify audience matches our Client ID
+        if user_info.get("aud") != GOOGLE_CLIENT_ID:
+            print(f"❌ Audience mismatch! Expected {GOOGLE_CLIENT_ID}, got {user_info.get('aud')}")
+            return jsonify({"error": "Security Mismatch: Audience (Client ID) does not match terminal configuration."}), 401
+            
+        # Extract Google Identity
+        google_sub = user_info.get("sub")
+        email = user_info.get("email")
+        name = user_info.get("name", "Google User")
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # 1. Check if this Google account is already linked
+        cursor.execute("SELECT * FROM users WHERE provider = 'google' AND provider_id = ?", (google_sub,))
+        user_row = cursor.fetchone()
+        
+        if not user_row:
+            # 2. Not linked. Check if a user with this email already exists
+            cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+            email_match = cursor.fetchone()
+            
+            if email_match:
+                # Link Google ID to existing email account
+                user_id = email_match["id"]
+                username = email_match["username"]
+                cursor.execute("UPDATE users SET provider = 'google', provider_id = ? WHERE id = ?", (google_sub, user_id))
+                conn.commit()
+            else:
+                # 3. Completely new user. Handle Username Collision
+                base_username = name
+                final_username = name
+                counter = 1
+                
+                # Ensure username is unique
+                while True:
+                    cursor.execute("SELECT id FROM users WHERE username = ?", (final_username,))
+                    if not cursor.fetchone():
+                        break
+                    final_username = f"{base_username}_{counter}"
+                    counter += 1
+                
+                try:
+                    # Provide a secure random dummy password to satisfy NOT NULL constraints if they exist in the DB
+                    dummy_password = generate_password_hash(os.urandom(24).hex())
+                    cursor.execute("INSERT INTO users (username, email, password, provider, provider_id) VALUES (?, ?, ?, 'google', ?)", 
+                                 (final_username, email, dummy_password, google_sub))
+                    conn.commit()
+                    user_id = cursor.lastrowid
+                    username = final_username
+                except sqlite3.IntegrityError as e:
+                    # Final fallback if something else failed (like race condition)
+                    return jsonify({"error": f"Security Handshake Error: {str(e)}"}), 500
+        else:
+            user_id = user_row["id"]
+            username = user_row["username"]
+            
+        conn.close()
+        return jsonify({"success": True, "token": user_id, "username": username, "method": "google"})
+        
+    except Exception as e:
+        return jsonify({"error": f"Internal Identity Error: {str(e)}"}), 500
+
+# ================= RUN =================
+if __name__ == "__main__":
+    init_db()
+    port = int(os.environ.get("PORT", 8080))
+    print(f"🚀 Crypto Terminal Server running at http://0.0.0.0:{port}")
+    app.run(debug=False, host="0.0.0.0", port=port, threaded=True)

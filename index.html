@@ -6187,12 +6187,14 @@ onclick="toggleWatchlist('${coin.symbol}', event)">${isStarred ? '★' : '☆'}<
         }
 
         function formatPrice(p) {
+            if (p === null || p === undefined) return '---';
             if (p >= 1) return p.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             if (p > 0.01) return p.toFixed(4);
             return p.toFixed(8);
         }
 
         function formatLargeNumber(n) {
+            if (n === null || n === undefined || n === 0) return '$0';
             if (n >= 1e12) return (n / 1e12).toFixed(2) + 'T';
             if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
             if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';

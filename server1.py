@@ -846,32 +846,54 @@ def market_list():
     if cg_cat:
         params["category"] = cg_cat
 
-    # 1. TRY BINANCE FIRST (Primary)
+    # 1. CATEGORY LOGIC: If a specific category is requested, use CoinGecko primarily
+    if cat != "all" and cg_cat:
+        print(f"📂 Requesting category: {cat} (CoinGecko category: {cg_cat})")
+        cg_data, cg_err = get_cg("/coins/markets", params)
+        if not cg_err and isinstance(cg_data, list) and len(cg_data) > 0:
+            return jsonify(cg_data)
+        print(f"⚠️ CoinGecko category fetch failed or empty. Falling back to 'all' via Binance.")
+
+    # 2. ALL CRYPTO LOGIC: Prioritize Binance for the main list
+    print("📋 Fetching 'all' market list (Binance Primary)")
     binance_syms = list(BINANCE_TO_CG_MAP.keys())
     b_data, b_err = api("/ticker/24hr", {"symbols": '["' + '","'.join(binance_syms) + '"]'})
     
-    if not b_err and isinstance(b_data, list):
-        return jsonify([{
-            "symbol": d["symbol"],
-            "name": d["symbol"].replace("USDT", ""),
-            "price": float(d["lastPrice"]),
-            "chg_24h": float(d["priceChangePercent"]),
-            "chg_7d": 0, # Binance does not provide 7d in this endpoint
-            "volume": float(d["quoteVolume"]),
-            "mcap": 0, # Not provided by Binance ticker
-            "rank": 0,
-            "sparkline": [],
-            "source": "Binance (Primary)"
-        } for d in b_data])
+    # Enrichment: Try to pull Cap/7d from cache if available
+    cg_lookup = {}
+    if "cg" in MARKET_CACHE: 
+        # Attempt to find some cached market data to fill in names/caps
+        for k, v in MARKET_CACHE["cg"].items():
+            if isinstance(v[0], list):
+                for c in v[0]: cg_lookup[c.get("symbol", "").upper()] = c
 
-    # 2. FALLBACK TO COINGECKO
-    print(f"⚠️ Binance Market List failed/restricted. Trying CoinGecko...")
+    if not b_err and isinstance(b_data, list):
+        results = []
+        for d in b_data:
+            sym = d["symbol"].replace("USDT", "")
+            cached = cg_lookup.get(sym.lower(), {})
+            results.append({
+                "symbol": d["symbol"],
+                "name": cached.get("name", sym),
+                "price": float(d["lastPrice"]),
+                "chg_24h": float(d["priceChangePercent"]),
+                "chg_7d": cached.get("price_change_percentage_7d_in_currency", 0),
+                "volume": float(d["quoteVolume"]),
+                "mcap": cached.get("market_cap", 0),
+                "rank": cached.get("market_cap_rank", 0),
+                "sparkline": cached.get("sparkline_in_7d", {}).get("price", []),
+                "source": "Binance (Primary)"
+            })
+        return jsonify(results)
+
+    # 3. GLOBAL FALLBACK TO COINGECKO (If Binance fails or if no category data yet)
+    print(f"⚠️ Binance Primary failed/restricted. Trying CoinGecko...")
     cg_data, cg_err = get_cg("/coins/markets", params)
     if not cg_err and isinstance(cg_data, list):
         return jsonify(cg_data)
 
-    # 3. FALLBACK TO MEXC
-    print(f"⚠️ CoinGecko Market List failed. Trying MEXC...")
+    # 4. FINAL FALLBACK TO MEXC
+    print(f"⚠️ Market List APIs failed. Using MEXC...")
     mexc_fallback = get_mexc_ticker(binance_syms)
     if mexc_fallback:
         return jsonify([{

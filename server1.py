@@ -108,7 +108,17 @@ OLLAMA_FALLBACK_MODEL = os.getenv("OLLAMA_FALLBACK_MODEL", "qwen2.5:3b")
 # Cloudflare Configuration
 CF_CLIENT_ID = os.getenv("CF_ACCESS_CLIENT_ID", "")
 CF_CLIENT_SECRET = os.getenv("CF_ACCESS_CLIENT_SECRET", "")
-CF_AIG_TOKEN = os.getenv("CF_AIG_TOKEN", "") # Optional: API Token for AI Gateway
+CF_AIG_TOKEN = os.getenv("CF_AIG_TOKEN", "") 
+
+# Binance to CoinGecko Mapping for Fallbacks
+BINANCE_TO_CG_MAP = {
+    "BTCUSDT": "bitcoin", "ETHUSDT": "ethereum", "BNBUSDT": "binancecoin",
+    "SOLUSDT": "solana", "XRPUSDT": "ripple", "ADAUSDT": "cardano",
+    "DOTUSDT": "polkadot", "AVAXUSDT": "avalanche-2", "DOGEUSDT": "dogecoin",
+    "LINKUSDT": "chainlink", "UNIUSDT": "uniswap", "ATOMUSDT": "cosmos",
+    "MATICUSDT": "matic-network", "NEARUSDT": "near", "APTUSDT": "aptos",
+    "ARBUSDT": "arbitrum", "OPUSDT": "optimism", "SUIUSDT": "sui"
+}
 
 def get_cf_headers():
     """Returns Cloudflare Access auth headers."""
@@ -178,11 +188,54 @@ def ollama_ok():
 def api(path, params=None):
     try:
         r = requests.get(BINANCE + path, params=params, timeout=10)
+        # Handle "Restricted Location" (451) or "Forbidden" (403)
+        if r.status_code in [451, 403]:
+            return {"restricted": True, "code": r.status_code}, None
         if not r.ok:
             return None, f"Binance API Error {r.status_code}: {r.text}"
         return r.json(), None
     except Exception as e:
         return None, str(e)
+
+def get_cg_ticker_fallback(binance_symbols):
+    """Fetches simple price data from CG and formats it as Binance 24hr ticker."""
+    cg_ids = [BINANCE_TO_CG_MAP.get(s) for s in binance_symbols if BINANCE_TO_CG_MAP.get(s)]
+    if not cg_ids: return []
+    
+    ids_param = ",".join(cg_ids)
+    url = f"https://api.coingecko.com/api/v3/simple/price"
+    params = {
+        "ids": ids_param,
+        "vs_currencies": "usd",
+        "include_24hr_vol": "true",
+        "include_24hr_change": "true"
+    }
+    
+    try:
+        r = requests.get(url, params=params, timeout=10)
+        if not r.ok: return []
+        cg_data = r.json()
+        
+        fallback_results = []
+        # Reverse map to Binance symbols for frontend compatibility
+        cg_to_binance = {v: k for k, v in BINANCE_TO_CG_MAP.items()}
+        
+        for cg_id, data in cg_data.items():
+            b_sym = cg_to_binance.get(cg_id)
+            if not b_sym: continue
+            
+            fallback_results.append({
+                "symbol": b_sym,
+                "lastPrice": str(data.get("usd", 0)),
+                "priceChangePercent": str(round(data.get("usd_24h_change", 0), 2)),
+                "volume": str(data.get("usd_24h_vol", 0)),
+                "highPrice": "---", # CG simple price doesn't give high/low easily
+                "lowPrice": "---",
+                "source": "CoinGecko (Fallback)"
+            })
+        return fallback_results
+    except:
+        return []
 
 
 # ================= DETECT COINS =================
@@ -419,24 +472,28 @@ def ticker():
         "symbols": '["' + '","'.join(syms) + '"]'
     })
 
+    # If restricted, use fallback
+    if isinstance(data, dict) and data.get("restricted"):
+        return jsonify(get_cg_ticker_fallback(syms))
+
     if err:
-        return jsonify({"error": err}), 502
+        return jsonify(get_cg_ticker_fallback(syms)) # Fallback on any error for reliability
 
     return jsonify(data)
 
 
 @app.route("/api/ticker/top")
 def top():
-    syms = [
-        "BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","ADAUSDT",
-        "DOTUSDT","AVAXUSDT","DOGEUSDT","LINKUSDT","UNIUSDT",
-        "ATOMUSDT","MATICUSDT","NEARUSDT","APTUSDT","ARBUSDT",
-        "OPUSDT","SUIUSDT"
-    ]
+    syms = list(BINANCE_TO_CG_MAP.keys())
 
     data, err = api("/ticker/24hr", {
         "symbols": '["' + '","'.join(syms) + '"]'
     })
+
+    # If restricted, use fallback
+    if isinstance(data, dict) and data.get("restricted"):
+        print("⚠️ Binance Restricted: Using CoinGecko Fallback for /top")
+        return jsonify(get_cg_ticker_fallback(syms))
 
     if err:
         print(f"DEBUG [ticker/top]: {err}")
@@ -444,7 +501,10 @@ def top():
 
     if not isinstance(data, list):
         print(f"DEBUG [ticker/top]: Expected list, got {type(data)} - {data}")
-        return jsonify({"error": "Binance API rejected cloud request (IP blocked/Rate limited)", "details": str(data)}), 502
+        # Secondary check for manual fallback if error string contains restriction clues
+        if "restricted" in str(data).lower() or "eligibility" in str(data).lower():
+             return jsonify(get_cg_ticker_fallback(syms))
+        return jsonify({"error": "Binance API rejected cloud request", "details": str(data)}), 502
 
     results = []
     for item in data:

@@ -94,7 +94,7 @@ def init_db():
 
 init_db()
 
-BINANCE = "https://api.binance.com/api/v3"
+BINANCE = "https://api1.binance.com/api/v3" # Using api1 for better global redundancy
 COINGECKO = "https://api.coingecko.com/api/v3"
 # GLOBAL CACHE
 MARKET_CACHE = {

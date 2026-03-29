@@ -8,8 +8,9 @@ import os
 from werkzeug.security import generate_password_hash, check_password_hash
 from concurrent.futures import ThreadPoolExecutor
 
-app = Flask(__name__)
-CORS(app)
+# CORS configuration
+origins = os.getenv("CORS_ORIGINS", "*").split(",")
+CORS(app, resources={r"/api/*": {"origins": origins}, r"/health": {"origins": "*"}})
 
 DB_PATH = "terminal.db"
 
@@ -447,12 +448,12 @@ def get_news():
 
 # ================= COINGECKO API =================
 def get_cg(path, params=None):
-    global CG_CACHE
+    global MARKET_CACHE
     now = time.time()
     cache_key = f"{path}_{str(params)}"
     
-    if cache_key in CG_CACHE:
-        entry, exp = CG_CACHE[cache_key]
+    if cache_key in MARKET_CACHE["cg"]:
+        entry, exp = MARKET_CACHE["cg"][cache_key]
         if now < exp:
             return entry, None
 
@@ -460,13 +461,10 @@ def get_cg(path, params=None):
         r = requests.get(COINGECKO + path, params=params, timeout=12)
         if r.ok:
             data = r.json()
-            CG_CACHE[cache_key] = (data, now + 300) # 5 min cache
+            MARKET_CACHE["cg"][cache_key] = (data, now + 300) # 5 min cache
             return data, None
         
         print(f"⚠️ CG API Failure: {path} - Status {r.status_code}")
-        if r.status_code == 429:
-             print("🛑 CoinGecko Rate Limited (429). Using fallback data.")
-        
         return None, f"CG Error: {r.status_code}"
     except Exception as e:
         print(f"❌ CG Exception: {str(e)}")
@@ -847,8 +845,24 @@ def market_list():
         params["category"] = cg_cat
 
     data, err = get_cg("/coins/markets", params)
+    
+    # MEXC Fallback for Market List if CoinGecko is restricted/rate-limited
     if err or not isinstance(data, list):
-        print(f"⚠️ CG Market List Error: {err}")
+        print(f"⚠️ CoinGecko Market List Error: {err}. Attempting MEXC fallback...")
+        mexc_symbols = list(BINANCE_TO_CG_MAP.keys())
+        mexc_fallback = get_mexc_ticker(mexc_symbols)
+        if mexc_fallback:
+            # Transform MEXC format to match expected Market List format
+            return jsonify([{
+                "symbol": d["symbol"],
+                "name": NAMES.get(d["symbol"], d["symbol"]),
+                "price": float(d["lastPrice"]),
+                "chg_24h": float(d["priceChangePercent"]),
+                "volume": float(d["volume"]),
+                "source": "MEXC (Fallback)"
+            } for d in mexc_fallback])
+        
+        print(f"⚠️ MEXC Fallback failed. Using Emergency Hardcoded Data.")
         # Return a larger hardcoded set as emergency fallback
         fallback = [
             {"symbol": "BTCUSDT", "name": "Bitcoin", "price": 65420.50, "chg_24h": +1.2, "chg_7d": -2.4, "volume": 35e9, "mcap": 1.28e12, "rank": 1, "sparkline": []},

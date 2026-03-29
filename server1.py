@@ -96,7 +96,12 @@ init_db()
 
 BINANCE = "https://api.binance.com/api/v3"
 COINGECKO = "https://api.coingecko.com/api/v3"
-CG_CACHE = {}
+# GLOBAL CACHE
+MARKET_CACHE = {
+    "ticker": {"data": None, "time": 0},
+    "top": {"data": None, "time": 0},
+    "cg": {}
+}
 NEWS = []
 NEWS_TIME = 0
 EVENTS = []
@@ -199,8 +204,37 @@ def api(path, params=None):
     except Exception as e:
         return None, str(e)
 
+def get_mexc_ticker(symbols):
+    """Fallback to MEXC Public API (often more reliable for cloud IPs)"""
+    try:
+        # MEXC uses BaseCurrency+QuoteCurrency (e.g., BTCUSDT)
+        r = requests.get("https://www.mexc.com/open/api/v2/market/ticker", timeout=8)
+        if not r.ok: return None
+        
+        mexc_data = {item['symbol']: item for item in r.json().get('data', [])}
+        results = []
+        for s in symbols:
+            if s in mexc_data:
+                d = mexc_data[s]
+                results.append({
+                    "symbol": s,
+                    "lastPrice": str(d.get("last", 0)),
+                    "priceChangePercent": str(d.get("change_rate", 0)),
+                    "volume": str(d.get("amount", 0)),
+                    "highPrice": str(d.get("high", "---")),
+                    "lowPrice": str(d.get("low", "---")),
+                    "source": "MEXC (Fallback)"
+                })
+        return results if results else None
+    except:
+        return None
+
 def get_cg_ticker_fallback(binance_symbols):
     """Fetches simple price data from CG and formats it as Binance 24hr ticker."""
+    # First, try MEXC as it's more 'Binance-like' and faster
+    mexc = get_mexc_ticker(binance_symbols)
+    if mexc: return mexc
+
     cg_ids = [BINANCE_TO_CG_MAP.get(s) for s in binance_symbols if BINANCE_TO_CG_MAP.get(s)]
     if not cg_ids: return []
     
@@ -477,59 +511,66 @@ def health():
 
 @app.route("/api/ticker/24hr")
 def ticker():
+    global MARKET_CACHE
+    now = time.time()
     default_symbols = "BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT,ADAUSDT,DOTUSDT,AVAXUSDT,DOGEUSDT,LINKUSDT"
+    syms_str = request.args.get("symbols", default_symbols)
+    syms = [s.strip().upper() for s in syms_str.split(",")]
 
-    syms = request.args.get("symbols", default_symbols)
-    syms = [s.strip().upper() for s in syms.split(",")]
+    # Cache check (60 sec TTL for ticker)
+    if MARKET_CACHE["ticker"]["data"] and (now - MARKET_CACHE["ticker"]["time"]) < 60:
+        return jsonify(MARKET_CACHE["ticker"]["data"])
 
     data, err = api("/ticker/24hr", {
         "symbols": '["' + '","'.join(syms) + '"]'
     })
 
-    # If restricted, use fallback
-    if isinstance(data, dict) and data.get("restricted"):
-        return jsonify(get_cg_ticker_fallback(syms))
+    # If restricted or error, use fallback
+    if err or (isinstance(data, dict) and data.get("restricted")):
+        print(f"⚠️ Binance Restricted/Error: Using Fallbacks for /ticker")
+        data = get_cg_ticker_fallback(syms)
 
-    if err:
-        return jsonify(get_cg_ticker_fallback(syms)) # Fallback on any error for reliability
-
+    MARKET_CACHE["ticker"]["data"] = data
+    MARKET_CACHE["ticker"]["time"] = now
     return jsonify(data)
 
 
 @app.route("/api/ticker/top")
 def top():
+    global MARKET_CACHE
+    now = time.time()
     syms = list(BINANCE_TO_CG_MAP.keys())
+
+    # Cache check (5 min TTL for top)
+    if MARKET_CACHE["top"]["data"] and (now - MARKET_CACHE["top"]["time"]) < 300:
+        return jsonify(MARKET_CACHE["top"]["data"])
 
     data, err = api("/ticker/24hr", {
         "symbols": '["' + '","'.join(syms) + '"]'
     })
 
     # If restricted, use fallback
-    if isinstance(data, dict) and data.get("restricted"):
-        print("⚠️ Binance Restricted: Using CoinGecko Fallback for /top")
-        return jsonify(get_cg_ticker_fallback(syms))
-
-    if err:
-        print(f"DEBUG [ticker/top]: {err}")
-        return jsonify({"error": err}), 502
+    if err or (isinstance(data, dict) and data.get("restricted")):
+        print("⚠️ Binance Restricted/Error: Using Fallbacks for /top")
+        data = get_cg_ticker_fallback(syms)
+        MARKET_CACHE["top"]["data"] = data
+        MARKET_CACHE["top"]["time"] = now
+        return jsonify(data)
 
     if not isinstance(data, list):
-        print(f"DEBUG [ticker/top]: Expected list, got {type(data)} - {data}")
-        # Secondary check for manual fallback if error string contains restriction clues
-        if "restricted" in str(data).lower() or "eligibility" in str(data).lower():
-             return jsonify(get_cg_ticker_fallback(syms))
-        return jsonify({"error": "Binance API rejected cloud request", "details": str(data)}), 502
+        data = get_cg_ticker_fallback(syms)
+        MARKET_CACHE["top"]["data"] = data
+        MARKET_CACHE["top"]["time"] = now
+        return jsonify(data)
 
     results = []
     for item in data:
         if not isinstance(item, dict):
-            continue  # Skip malformed items (e.g. Binance rate-limit error strings)
+            continue
         last = float(item.get("lastPrice", 0))
         high = float(item.get("highPrice", 0))
         low = float(item.get("lowPrice", 0))
         vol = float(item.get("quoteVolume", 0))
-        
-        # Volatility Index: (High - Low) / Low * 100
         volatility = ((high - low) / low * 100) if low > 0 else 0
         
         results.append({
@@ -540,10 +581,10 @@ def top():
             "priceChangePercent": float(item.get("priceChangePercent", 0))
         })
 
-    # Sort by 24h USD Volume (Market Action)
     sorted_by_vol = sorted(results, key=lambda x: x["volume"], reverse=True)
-
-    return jsonify(sorted_by_vol[:20])
+    MARKET_CACHE["top"]["data"] = sorted_by_vol[:20]
+    MARKET_CACHE["top"]["time"] = now
+    return jsonify(MARKET_CACHE["top"]["data"])
 
 
 @app.route("/api/klines")

@@ -835,13 +835,7 @@ def market_list():
     mapping = {
         "defi": "decentralized-finance-defi",
         "layer1": "layer-1",
-        "infrastructure": "infrastructure",
-        "memes": "meme-token",
-        "ai": "artificial-intelligence",
-        "gaming": "gaming",
-        "nft": "nft",
-        "storage": "storage",
-        "dex": "decentralized-exchange"
+        "memes": "meme-token"
     }
     
     cg_cat = mapping.get(cat)

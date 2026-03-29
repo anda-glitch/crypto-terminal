@@ -454,8 +454,10 @@ def get_cg(path, params=None):
     now = time.time()
     cache_key = f"{path}_{str(params)}"
     
-    if cache_key in MARKET_CACHE["cg"]:
-        entry, exp = MARKET_CACHE["cg"][cache_key]
+    # Check cache first
+    cached_entry = MARKET_CACHE["cg"].get(cache_key)
+    if cached_entry:
+        entry, exp = cached_entry
         if now < exp:
             return entry, None
 
@@ -463,13 +465,21 @@ def get_cg(path, params=None):
         r = requests.get(COINGECKO + path, params=params, timeout=12)
         if r.ok:
             data = r.json()
-            MARKET_CACHE["cg"][cache_key] = (data, now + 300) # 5 min cache
+            MARKET_CACHE["cg"][cache_key] = (data, now + 600) # 10 min cache
             return data, None
         
         print(f"⚠️ CG API Failure: {path} - Status {r.status_code}")
+        
+        # 🔑 PERMANENT 429 FIX: If API fails but we have STALE cache, use it!
+        if cached_entry:
+            print(f"🔄 Using STALE cache for {path} due to API Error {r.status_code}")
+            return cached_entry[0], None
+            
         return None, f"CG Error: {r.status_code}"
     except Exception as e:
         print(f"❌ CG Exception: {str(e)}")
+        if cached_entry:
+            return cached_entry[0], None
         return None, str(e)
 
 

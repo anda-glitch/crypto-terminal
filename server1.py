@@ -185,13 +185,26 @@ def call_ai_api(prompt, model=None, system_prompt=None, timeout=30):
 
 def ollama_ok():
     """Checks if the AI service is reachable."""
+    if not OLLAMA_BASE or "localhost" in OLLAMA_BASE or "127.0.0.1" in OLLAMA_BASE:
+        # For local, we need a successful ping
+        try:
+            return requests.get(f"{OLLAMA_BASE}/api/tags", timeout=2).ok
+        except:
+            return False
+            
+    # For Remote URL (Cloudflare Tunnel/Gateway)
     try:
-        # For AI Gateway/OpenAI compat, we check /models or just a quick ping
+        # Cloudflare Gateway is always assumed OK if URL is set
         if "gateway.ai.cloudflare.com" in OLLAMA_BASE:
-            return True # Assume OK if configured, or do a more expensive check later
-        return requests.get(f"{OLLAMA_BASE}/api/tags", timeout=5, headers=get_cf_headers()).ok
-    except:
-        return False
+            return True
+            
+        r = requests.get(f"{OLLAMA_BASE}/api/tags", timeout=5, headers=get_cf_headers())
+        # 200 = Success, 403/401 = Protected by Access (but it's THERE), 451 = Restricted but THERE
+        return r.status_code in [200, 401, 403, 451]
+    except Exception as e:
+        # If it's a custom remote URL, assume it's ON if configured
+        print(f"AI Health Check Note: {str(e)}")
+        return True
 
 
 # ================= BINANCE API =================

@@ -8,6 +8,8 @@ import os
 from werkzeug.security import generate_password_hash, check_password_hash
 from concurrent.futures import ThreadPoolExecutor
 
+app = Flask(__name__)
+
 # CORS configuration
 origins = os.getenv("CORS_ORIGINS", "*").split(",")
 CORS(app, resources={r"/api/*": {"origins": origins}, r"/health": {"origins": "*"}})

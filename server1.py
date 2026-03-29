@@ -856,7 +856,11 @@ def market_list():
             "name": d["symbol"].replace("USDT", ""),
             "price": float(d["lastPrice"]),
             "chg_24h": float(d["priceChangePercent"]),
+            "chg_7d": 0, # Binance does not provide 7d in this endpoint
             "volume": float(d["quoteVolume"]),
+            "mcap": 0, # Not provided by Binance ticker
+            "rank": 0,
+            "sparkline": [],
             "source": "Binance (Primary)"
         } for d in b_data])
 
@@ -875,7 +879,11 @@ def market_list():
             "name": d["symbol"].replace("USDT", ""),
             "price": float(d["lastPrice"]),
             "chg_24h": float(d["priceChangePercent"]),
+            "chg_7d": 0,
             "volume": float(d["volume"]),
+            "mcap": 0,
+            "rank": 0,
+            "sparkline": [],
             "source": "MEXC (Fallback)"
         } for d in mexc_fallback])
 

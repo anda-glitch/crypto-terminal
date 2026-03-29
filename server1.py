@@ -22,7 +22,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 @app.route("/")
 def index():
-    return open(os.path.join(BASE_DIR, "testcrypto.html")).read()
+    return open(os.path.join(BASE_DIR, "index.html")).read()
 
 @app.route("/ads.txt")
 def ads_txt():
@@ -96,6 +96,7 @@ init_db()
 
 BINANCE = "https://api.binance.com/api/v3"
 COINGECKO = "https://api.coingecko.com/api/v3"
+CG_CACHE = {}
 NEWS = []
 NEWS_TIME = 0
 EVENTS = []
@@ -741,14 +742,13 @@ def bot_logs():
 @app.route("/api/market/global")
 def market_global():
     data, err = get_cg("/global")
-    if err:
+    if err or not isinstance(data, dict):
         return jsonify({
             "total_mcap": "$2.64T", "mcap_change": "+1.2%", "vol_24h": "$84.2B",
             "btc_dom": "52.1%", "eth_dom": "17.2%", "active_coins": "12,430",
             "warning": "Using fallback data due to CG error"
         })
-    
-    g = data.get("data", {})
+
     mcap = sum(g.get("total_market_cap", {}).values())
     vol = sum(g.get("total_volume", {}).values())
     

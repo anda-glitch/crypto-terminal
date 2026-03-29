@@ -844,64 +844,49 @@ def market_list():
     if cg_cat:
         params["category"] = cg_cat
 
-    data, err = get_cg("/coins/markets", params)
+    # 1. TRY BINANCE FIRST (Primary)
+    binance_syms = list(BINANCE_TO_CG_MAP.keys())
+    b_data, b_err = api("/ticker/24hr", {"symbols": '["' + '","'.join(binance_syms) + '"]'})
     
-    # MEXC Fallback for Market List if CoinGecko is restricted/rate-limited
-    if err or not isinstance(data, list):
-        print(f"⚠️ CoinGecko Market List Error: {err}. Attempting MEXC fallback...")
-        mexc_symbols = list(BINANCE_TO_CG_MAP.keys())
-        mexc_fallback = get_mexc_ticker(mexc_symbols)
-        if mexc_fallback:
-            # Transform MEXC format to match expected Market List format
-            return jsonify([{
-                "symbol": d["symbol"],
-                "name": NAMES.get(d["symbol"], d["symbol"]),
-                "price": float(d["lastPrice"]),
-                "chg_24h": float(d["priceChangePercent"]),
-                "volume": float(d["volume"]),
-                "source": "MEXC (Fallback)"
-            } for d in mexc_fallback])
-        
-        print(f"⚠️ MEXC Fallback failed. Using Emergency Hardcoded Data.")
-        # Return a larger hardcoded set as emergency fallback
-        fallback = [
-            {"symbol": "BTCUSDT", "name": "Bitcoin", "price": 65420.50, "chg_24h": +1.2, "chg_7d": -2.4, "volume": 35e9, "mcap": 1.28e12, "rank": 1, "sparkline": []},
-            {"symbol": "ETHUSDT", "name": "Ethereum", "price": 3480.12, "chg_24h": -0.5, "chg_7d": +1.8, "volume": 12e9, "mcap": 418e9, "rank": 2, "sparkline": []},
-            {"symbol": "BNBUSDT", "name": "BNB", "price": 592.30, "chg_24h": +0.8, "chg_7d": +5.2, "volume": 2e9, "mcap": 91e9, "rank": 4, "sparkline": []},
-            {"symbol": "SOLUSDT", "name": "Solana", "price": 145.67, "chg_24h": -2.1, "chg_7d": -8.4, "volume": 4e9, "mcap": 64e9, "rank": 5, "sparkline": []},
-            {"symbol": "XRPUSDT", "name": "XRP", "price": 0.62, "chg_24h": +0.1, "chg_7d": -1.2, "volume": 1e9, "mcap": 34e9, "rank": 6, "sparkline": []},
-            {"symbol": "ADAUSDT", "name": "Cardano", "price": 0.45, "chg_24h": -1.5, "chg_7d": -4.2, "volume": 500e6, "mcap": 16e9, "rank": 9, "sparkline": []},
-            {"symbol": "AVAXUSDT", "name": "Avalanche", "price": 38.20, "chg_24h": +2.4, "chg_7d": -10.5, "volume": 800e6, "mcap": 14e9, "rank": 11, "sparkline": []},
-            {"symbol": "DOTUSDT", "name": "Polkadot", "price": 7.12, "chg_24h": -1.2, "chg_7d": -3.8, "volume": 200e6, "mcap": 10e9, "rank": 14, "sparkline": []},
-            {"symbol": "DOGEUSDT", "name": "Dogecoin", "price": 0.16, "chg_24h": +5.4, "chg_7d": +12.1, "volume": 1.2e9, "mcap": 23e9, "rank": 8, "sparkline": []},
-            {"symbol": "LINKUSDT", "name": "Chainlink", "price": 18.45, "chg_24h": +0.3, "chg_7d": -5.1, "volume": 400e6, "mcap": 10e9, "rank": 13, "sparkline": []}
-        ]
-        return jsonify(fallback)
+    if not b_err and isinstance(b_data, list):
+        return jsonify([{
+            "symbol": d["symbol"],
+            "name": d["symbol"].replace("USDT", ""),
+            "price": float(d["lastPrice"]),
+            "chg_24h": float(d["priceChangePercent"]),
+            "volume": float(d["quoteVolume"]),
+            "source": "Binance (Primary)"
+        } for d in b_data])
 
-    results = []
-    for coin in data:
+    # 2. FALLBACK TO COINGECKO
+    print(f"⚠️ Binance Market List failed/restricted. Trying CoinGecko...")
+    cg_data, cg_err = get_cg("/coins/markets", params)
+    if not cg_err and isinstance(cg_data, list):
+        return jsonify(cg_data)
 
-        if not isinstance(coin, dict): continue
-        symbol = coin.get("symbol", "").upper()
-        # Map to Binance ticker for chart switching
-        binance_sym = symbol + "USDT"
-        
-        # Get sparkline
-        spark = coin.get("sparkline_in_7d", {}).get("price", [])
-        
-        results.append({
-            "symbol": binance_sym,
-            "name": coin.get("name", ""),
-            "price": coin.get("current_price", 0) or 0,
-            "chg_24h": round(coin.get("price_change_percentage_24h", 0) or 0, 2),
-            "chg_7d": round(coin.get("price_change_percentage_7d_in_currency", 0) or 0, 2),
-            "volume": coin.get("total_volume", 0) or 0,
-            "mcap": coin.get("market_cap", 0) or 0,
-            "rank": coin.get("market_cap_rank", 0) or 0,
-            "sparkline": spark
-        })
+    # 3. FALLBACK TO MEXC
+    print(f"⚠️ CoinGecko Market List failed. Trying MEXC...")
+    mexc_fallback = get_mexc_ticker(binance_syms)
+    if mexc_fallback:
+        return jsonify([{
+            "symbol": d["symbol"],
+            "name": d["symbol"].replace("USDT", ""),
+            "price": float(d["lastPrice"]),
+            "chg_24h": float(d["priceChangePercent"]),
+            "volume": float(d["volume"]),
+            "source": "MEXC (Fallback)"
+        } for d in mexc_fallback])
 
-    return jsonify(results)
+    # 4. EMERGENCY HARDCODED DATA
+    print(f"⚠️ All API fallbacks failed. Using Emergency Hardcoded Data.")
+    fallback = [
+        {"symbol": "BTCUSDT", "name": "Bitcoin", "price": 65420.50, "chg_24h": 1.2, "volume": 35e9, "source": "Emergency"},
+        {"symbol": "ETHUSDT", "name": "Ethereum", "price": 3480.12, "chg_24h": -0.5, "volume": 12e9, "source": "Emergency"},
+        {"symbol": "BNBUSDT", "name": "BNB", "price": 592.30, "chg_24h": 0.8, "volume": 2e9, "source": "Emergency"},
+        {"symbol": "SOLUSDT", "name": "Solana", "price": 145.67, "chg_24h": -2.1, "volume": 4e9, "source": "Emergency"},
+        {"symbol": "XRPUSDT", "name": "XRP", "price": 0.62, "chg_24h": 0.1, "volume": 1e9, "source": "Emergency"}
+    ]
+    return jsonify(fallback)
 
 
 # ================= WHALE WATCH API =================

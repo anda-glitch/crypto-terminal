@@ -5283,9 +5283,8 @@ class="${summaryClass}">${summary}</div>` : ''}
                 const el = views[v];
                 if (el) {
                     el.classList.toggle('hidden', v !== tab);
-                    // Explicit display check for critical views
-                    if (v === tab) el.style.display = 'flex';
-                    else if (v === 'home' || v === 'settings') el.style.display = (v === tab) ? 'flex' : 'none';
+                    // Clean up any lingering inline styles that caused the overlay bug
+                    el.style.display = ''; 
                 }
             });
 

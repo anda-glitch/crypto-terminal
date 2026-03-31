@@ -1826,7 +1826,7 @@ stroke="currentColor" stroke-width="2">
             </svg>
             ANALYTICS
         </button>
-        <button class="mobile-quick-btn" onclick="setActiveTab('home')">
+        <button class="mobile-quick-btn" onclick="setActiveTab('settings')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="3"/>
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -1893,7 +1893,7 @@ stroke="currentColor" stroke-width="2">
                 <span class="sidebar-label">TRADEBOTS</span>
             </div>
             <div class="sidebar-spacer"></div>
-            <div class="sidebar-icon" title="Settings">
+            <div class="sidebar-icon" title="Settings" onclick="setActiveTab('settings')">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="3"/>
                     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -2469,6 +2469,49 @@ id="sentimentValue">50%</span>
                 </div>
                 <div class="panel" style="background:transparent; border:none; padding:0;">
                     <div id="heatmapGrid" class="heatmap-grid"></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- SETTINGS VIEW -->
+        <main class="main-content hidden" id="settingsView">
+            <div class="panel" style="max-width: 800px; margin: 20px auto;">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="3"/>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                        </svg>
+                        TERMINAL SETTINGS
+                    </div>
+                </div>
+                <div class="panel-content" style="padding: 20px; display: flex; flex-direction: column; gap: 20px;">
+                    <section>
+                        <h3 style="color: var(--bloomberg-orange); font-size: 14px; margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 5px;">ABOUT CRYPTO TERMINAL</h3>
+                        <p style="color: var(--text-secondary); font-size: 13px; line-height: 1.6;">
+                            Crypto Terminal is a high-performance, real-time intelligence dashboard designed for professional traders and crypto enthusiasts. It provides institutional-grade market data, AI-powered sentiment analysis, and autonomous tradebot monitoring in a unified Bloomberg-inspired interface.
+                        </p>
+                    </section>
+
+                    <section>
+                        <h3 style="color: var(--bloomberg-orange); font-size: 14px; margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 5px;">SUPPORT & CONTACT</h3>
+                        <p style="color: var(--text-secondary); font-size: 13px;">
+                            For technical assistance, bug reports, or feature requests, please contact our support team:
+                        </p>
+                        <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--bloomberg-blue)" stroke-width="2">
+                                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
+                            </svg>
+                            <a href="mailto:support@cryptoterminal.online" style="color: var(--bloomberg-blue); text-decoration: none; font-weight: 700;">support@cryptoterminal.online</a>
+                        </div>
+                    </section>
+
+                    <section style="background: rgba(255, 183, 0, 0.05); border: 1px solid rgba(255, 183, 0, 0.2); padding: 15px; border-radius: 4px;">
+                        <h3 style="color: var(--bloomberg-amber); font-size: 12px; margin-bottom: 5px; font-weight: 900;">BETA VERSION NOTICE</h3>
+                        <p style="color: var(--text-muted); font-size: 11px; line-height: 1.4;">
+                            This is a beta version of the Crypto Terminal. Some features may be unstable or subject to change. We are constantly working on improvements and new features will be updated soon. Your feedback is invaluable during this phase.
+                        </p>
+                    </section>
                 </div>
             </div>
         </main>
@@ -3182,7 +3225,8 @@ function setActiveTab(tab) {
         'market':    document.getElementById('marketView'),
         'whale':     document.getElementById('whaleView'),
         'news':      document.getElementById('newsView'),
-        'analytics': document.getElementById('analyticsView')
+        'analytics': document.getElementById('analyticsView'),
+        'settings':  document.getElementById('settingsView')
     };
     
     // Update nav links
@@ -3204,6 +3248,10 @@ function setActiveTab(tab) {
     if (tab === 'whale') {
         const w = Array.from(icons).find(i => i.title === 'Whale Watch');
         if (w) w.classList.add('active');
+    }
+    if (tab === 'settings') {
+        const s = Array.from(icons).find(i => i.title === 'Settings');
+        if (s) s.classList.add('active');
     }
 
     if (tab === 'news') {

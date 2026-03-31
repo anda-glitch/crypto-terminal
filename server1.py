@@ -178,6 +178,8 @@ def call_ai_api(prompt, model=None, system_prompt=None, timeout=30):
                 return r.json().get("response", "").strip(), None
         
         # Handle errors
+        if r.status_code == 403 and "Cloudflare Access" in r.text:
+            return None, "Cloudflare Access Blocked: Please ensure CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET Service Tokens are set in your environment."
         error_msg = f"AI Error {r.status_code}: {r.text[:100]}"
         return None, error_msg
     except Exception as e:

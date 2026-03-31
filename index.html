@@ -3827,14 +3827,14 @@
                     <span class="sidebar-label">DATABASE</span>
                 </div>
                 <div class="sidebar-spacer"></div>
-                <div class="sidebar-icon" title="Settings" onclick="setActiveTab('settings')">
+                <button class="sidebar-icon" id="sidebarSettingsBtn" title="Settings" onclick="console.log('Sidebar Settings Clicked'); setActiveTab('settings')" style="background:none; border:none; width:100%; cursor:pointer; outline:none; display:flex; align-items:center;">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="3" />
                         <path
                             d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
                     </svg>
                     <span class="sidebar-label">SETTINGS</span>
-                </div>
+                </button>
             </aside>
 
             <!-- VIEW CONTAINER -->
@@ -5264,6 +5264,7 @@ class="${summaryClass}">${summary}</div>` : ''}
         }
 
         function setActiveTab(tab) {
+            console.log("Navigating to:", tab);
             const views = {
                 'home': document.getElementById('homeView'),
                 'ai': document.getElementById('aiView'),
@@ -5276,28 +5277,33 @@ class="${summaryClass}">${summary}</div>` : ''}
                 'settings': document.getElementById('settingsView')
             };
 
-            // Update nav links
+            // 1. Mandatory UI Toggle (Highest Priority)
+            Object.keys(views).forEach(v => {
+                const el = views[v];
+                if (el) {
+                    el.classList.toggle('hidden', v !== tab);
+                    // Explicit display check for critical views
+                    if (v === tab) el.style.display = 'flex';
+                    else if (v === 'home' || v === 'settings') el.style.display = (v === tab) ? 'flex' : 'none';
+                }
+            });
+
+            // 2. Global UI Highlighting
             document.querySelectorAll('.nav-links .nav-link[data-tab]').forEach(n => {
                 n.classList.toggle('active', n.dataset.tab === tab);
             });
-
-            // Handle specific view initializations
-
-            if (tab === 'news') fetchTerminalNews('geopolitics');
-            if (tab === 'analytics') updateHeatmap();
-            if (tab === 'market') updateMarketDashboard();
-            if (tab === 'bot') updateBotDashboard();
-            if (tab === 'whale') updateWhaleDashboard();
-
-            // Update sidebar icons via helper
             setActiveIcon(tab);
 
-            // Show/Hide views
-            Object.keys(views).forEach(v => {
-                if (views[v]) {
-                    views[v].classList.toggle('hidden', v !== tab);
-                }
-            });
+            // 3. Tab-specific asynchronous initializations (Defensive)
+            try {
+                if (tab === 'news') fetchTerminalNews('geopolitics');
+                if (tab === 'analytics') updateHeatmap();
+                if (tab === 'market') updateMarketDashboard();
+                if (tab === 'bot') updateBotDashboard();
+                if (tab === 'whale') updateWhaleDashboard();
+            } catch (e) {
+                console.error("Tab Initialization Error:", e);
+            }
         }
 
         document.querySelectorAll('.nav-links .nav-link[data-tab]').forEach(link => {
@@ -6865,18 +6871,20 @@ onclick="toggleWatchlist('${coin.symbol}', event)">${isStarred ? '★' : '☆'}<
 
         // ================= DATABASE INSPECTOR LOGIC =================
         function setActiveIcon(tab) {
-            document.querySelectorAll('.sidebar-icon').forEach(icon => {
-                icon.classList.remove('active');
-            });
-            
-            // Map tabs to sidebar icon indices or IDs
             const icons = document.querySelectorAll('.sidebar-icon');
+            icons.forEach(icon => icon.classList.remove('active'));
+            
+            // Explicit title-based or index-based mapping
             if (tab === 'home') icons[0]?.classList.add('active');
             if (tab === 'news') icons[1]?.classList.add('active');
             if (tab === 'market') icons[2]?.classList.add('active');
             if (tab === 'whale') icons[3]?.classList.add('active');
             if (tab === 'analytics') icons[4]?.classList.add('active');
             if (tab === 'bot') document.getElementById('btnBotView')?.classList.add('active');
+            if (tab === 'db') {
+                const d = Array.from(icons).find(i => i.title === 'Database Inspector');
+                if (d) d.classList.add('active');
+            }
             if (tab === 'settings') {
                 const s = Array.from(icons).find(i => i.title === 'Settings');
                 if (s) s.classList.add('active');

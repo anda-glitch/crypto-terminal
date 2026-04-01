@@ -2,6 +2,7 @@
 <html lang="en">
 
 <head>
+<meta name="coinzilla" content="8ffda7fc42b1b22c45624e2e205812a2" />
     <meta name="google-adsense-account" content="ca-pub-6521101277720704">
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6521101277720704" crossorigin="anonymous"></script>
     <script async custom-element="amp-auto-ads" src="https://cdn.ampproject.org/v0/amp-auto-ads-0.1.js"></script>
@@ -4468,11 +4469,17 @@
                     <!-- Toolbar -->
                     <div class="heatmap-toolbar">
                         <div class="heatmap-toolbar-left">
-                            <div class="heatmap-toolbar-title">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 12h10M12 7v10"/></svg>
-                                MARKET HEATMAP
+                            <div class="heatmap-toolbar-title" style="display:flex; align-items:center; gap:20px;">
+                                <div style="display:flex; align-items:center;">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 12h10M12 7v10"/></svg>
+                                    <span id="heatmapMainTitle">MARKET HEATMAP</span>
+                                </div>
+                                <div class="heatmap-period-controls">
+                                    <button class="heatmap-period-btn active" id="btnModeCoins" onclick="setHeatmapMode('coins')">COINS</button>
+                                    <button class="heatmap-period-btn" id="btnModeExchanges" onclick="setHeatmapMode('exchanges')">EXCHANGES</button>
+                                </div>
                             </div>
-                            <div class="heatmap-period-controls">
+                            <div class="heatmap-period-controls" id="coinPeriodControls">
                                 <button class="heatmap-period-btn" onclick="setHeatmapPeriod('1h', this)">1H</button>
                                 <button class="heatmap-period-btn active" onclick="setHeatmapPeriod('24h', this)">24H</button>
                                 <button class="heatmap-period-btn" onclick="setHeatmapPeriod('7d', this)">7D</button>
@@ -5297,7 +5304,13 @@ class="${summaryClass}">${summary}</div>` : ''}
             // 3. Tab-specific asynchronous initializations (Defensive)
             try {
                 if (tab === 'news') fetchTerminalNews('geopolitics');
-                if (tab === 'analytics') updateHeatmap();
+                if (tab === 'analytics') {
+                    if (typeof currentHeatmapMode !== 'undefined' && currentHeatmapMode === 'exchanges') {
+                        updateLiquidityHeatmap();
+                    } else {
+                        updateHeatmap();
+                    }
+                }
                 if (tab === 'market') updateMarketDashboard();
                 if (tab === 'bot') updateBotDashboard();
                 if (tab === 'whale') updateWhaleDashboard();
@@ -6412,6 +6425,255 @@ onclick="toggleWatchlist('${coin.symbol}', event)">${isStarred ? '★' : '☆'}<
             </div>
         `;
             }).join('');
+        }
+
+        let currentHeatmapMode = 'coins';
+
+        function setHeatmapMode(mode) {
+            currentHeatmapMode = mode;
+            document.getElementById('btnModeCoins').classList.toggle('active', mode === 'coins');
+            document.getElementById('btnModeExchanges').classList.toggle('active', mode === 'exchanges');
+            
+            // Toggle visibility of controls/legends depending on mode
+            const pc = document.getElementById('coinPeriodControls');
+            if (pc) pc.style.display = mode === 'coins' ? 'flex' : 'none';
+            
+            const tbRight = document.querySelector('.heatmap-toolbar-right');
+            if (tbRight) tbRight.style.display = mode === 'coins' ? 'flex' : 'none';
+            
+            const legend = document.querySelector('.heatmap-legend');
+            if (legend) legend.style.display = mode === 'coins' ? 'flex' : 'none';
+            
+            if (mode === 'coins') {
+                document.getElementById('heatmapMainTitle').textContent = 'MARKET HEATMAP';
+                updateHeatmap();
+            } else {
+                document.getElementById('heatmapMainTitle').textContent = 'EXCHANGE LIQUIDITY';
+                updateLiquidityHeatmap();
+            }
+        }
+
+        async function updateLiquidityHeatmap() {
+            const treemap = document.getElementById('heatmapTreemap');
+            if (!treemap) return;
+            try {
+                treemap.innerHTML = '<div style="color:var(--text-muted); padding:20px;">Fetching Exchange Liquidity...</div>';
+                const data = await apiFetch('/market/exchanges');
+                if (!data || data.length === 0) {
+                    treemap.innerHTML = '<div style="color:var(--bloomberg-red); padding:20px;">Failed to load exchanges.</div>';
+                    return;
+                }
+                renderHierarchicalTreemap(data);
+            } catch (e) {
+                console.error('Liquidity Heatmap update error:', e);
+                treemap.innerHTML = '<div style="color:var(--bloomberg-red); padding:20px;">Error loading liquidity data.</div>';
+            }
+        }
+
+        function renderHierarchicalTreemap(categories) {
+            const container = document.getElementById('heatmapTreemap');
+            if (!container) return;
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            if (width === 0 || height === 0) return;
+
+            container.innerHTML = '';
+            
+            // Tooltip setup
+            let tooltip = document.getElementById('hmTooltip');
+            if (!tooltip) {
+                tooltip = document.createElement('div');
+                tooltip.id = 'hmTooltip';
+                tooltip.className = 'hm-tooltip';
+                document.body.appendChild(tooltip);
+            }
+
+            // Calculate total volume per category to establish top-level split
+            categories.forEach(cat => {
+                cat.totalVolume = cat.exchanges.reduce((sum, ex) => sum + (ex.volume || 0), 0);
+            });
+            const sortedCategories = [...categories].sort((a,b) => b.totalVolume - a.totalVolume);
+            
+            // Re-usable binary split algorithm
+            function split(items, x, y, w, h, isCategoryLevel, parentSector) {
+                if (items.length === 0) return;
+                
+                if (items.length === 1) {
+                    if (isCategoryLevel) {
+                        // Render category box and then split inside it
+                        createCategoryBox(items[0], x, y, w, h);
+                    } else {
+                        // Render leaf node
+                        createExchangeCell(items[0], x, y, w, h, parentSector);
+                    }
+                    return;
+                }
+
+                let sum = 0;
+                const weightKey = isCategoryLevel ? 'totalVolume' : 'volume';
+                const total = items.reduce((s, it) => s + (it[weightKey] || 0), 0);
+                
+                let splitIdx = 0;
+                let minDiff = Infinity;
+
+                for (let i = 0; i < items.length; i++) {
+                    sum += (items[i][weightKey] || 0);
+                    const diff = Math.abs(sum - (total / 2));
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        splitIdx = i + 1;
+                    }
+                }
+
+                const part1 = items.slice(0, splitIdx);
+                const part2 = items.slice(splitIdx);
+                const sum1 = part1.reduce((s, it) => s + (it[weightKey] || 0), 0);
+                const ratio = total === 0 ? 0.5 : sum1 / total;
+
+                if (w > h) {
+                    split(part1, x, y, w * ratio, h, isCategoryLevel, parentSector);
+                    split(part2, x + w * ratio, y, w * (1 - ratio), h, isCategoryLevel, parentSector);
+                } else {
+                    split(part1, x, y, w, h * ratio, isCategoryLevel, parentSector);
+                    split(part2, x, y + h * ratio, w, h * (1 - ratio), isCategoryLevel, parentSector);
+                }
+            }
+
+            function createCategoryBox(cat, x, y, w, h) {
+                // Ignore very tiny category boxes
+                if (w < 20 || h < 20) return;
+
+                const wrapper = document.createElement('div');
+                wrapper.style.position = 'absolute';
+                wrapper.style.left = x + 'px';
+                wrapper.style.top = y + 'px';
+                wrapper.style.width = w + 'px';
+                wrapper.style.height = h + 'px';
+                wrapper.style.border = '1px solid #000'; // Token Terminal style parent borders
+                wrapper.style.boxSizing = 'border-box';
+                wrapper.style.overflow = 'hidden';
+                container.appendChild(wrapper);
+
+                const header = document.createElement('div');
+                header.style.position = 'absolute';
+                header.style.top = '0';
+                header.style.left = '0';
+                header.style.width = '100%';
+                header.style.height = '18px';
+                header.style.background = 'rgba(0,0,0,0.5)';
+                header.style.color = 'var(--text-muted)';
+                header.style.fontSize = '10px';
+                header.style.padding = '2px 6px';
+                header.style.boxSizing = 'border-box';
+                header.style.zIndex = '5';
+                header.textContent = cat.sector.toUpperCase();
+                wrapper.appendChild(header);
+
+                // Now split the exchanges inside this category
+                // leaving space for the header
+                const innerY = 18;
+                const innerH = h - 18;
+                
+                if (innerH > 10) {
+                   const sortedExchanges = [...cat.exchanges].sort((a,b) => b.volume - a.volume);
+                   // Create a mock container logic using split
+                   // We pass wrapper coords as 0,0 since exchanges are nested IN wrapper
+                   splitIntoDOM(sortedExchanges, 0, innerY, w, innerH, wrapper, cat.sector);
+                }
+            }
+            
+            function splitIntoDOM(items, x, y, w, h, parentDOM, parentSector) {
+                if (items.length === 0) return;
+                
+                if (items.length === 1) {
+                    const leaf = createExchangeCellRaw(items[0], x, y, w, h, parentSector);
+                    if(leaf) parentDOM.appendChild(leaf);
+                    return;
+                }
+
+                let sum = 0;
+                const total = items.reduce((s, it) => s + (it.volume || 0), 0);
+                
+                let splitIdx = 0;
+                let minDiff = Infinity;
+
+                for (let i = 0; i < items.length; i++) {
+                    sum += (items[i].volume || 0);
+                    const diff = Math.abs(sum - (total / 2));
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        splitIdx = i + 1;
+                    }
+                }
+
+                const part1 = items.slice(0, splitIdx);
+                const part2 = items.slice(splitIdx);
+                const sum1 = part1.reduce((s, it) => s + (it.volume || 0), 0);
+                const ratio = total === 0 ? 0.5 : sum1 / total;
+
+                if (w > h) {
+                    splitIntoDOM(part1, x, y, w * ratio, h, parentDOM, parentSector);
+                    splitIntoDOM(part2, x + w * ratio, y, w * (1 - ratio), h, parentDOM, parentSector);
+                } else {
+                    splitIntoDOM(part1, x, y, w, h * ratio, parentDOM, parentSector);
+                    splitIntoDOM(part2, x, y + h * ratio, w, h * (1 - ratio), parentDOM, parentSector);
+                }
+            }
+
+            function createExchangeCellRaw(item, x, y, w, h, parentSector) {
+                if (w < 1 || h < 1) return null;
+                const cell = document.createElement('div');
+                cell.className = 'hm-cell';
+                if (w < 40 || h < 30) cell.classList.add('hm-tiny');
+                else if (w < 80 || h < 60) cell.classList.add('hm-small');
+                else if (w > 150 && h > 100) cell.classList.add('hm-large');
+
+                // Thematic Coloring
+                let color = '#222';
+                if (parentSector.includes('Spot')) {
+                    // Spot is green themed
+                    color = '#1f4d36'; // deep green
+                    cell.style.boxShadow = 'inset 0 0 10px rgba(0,255,100,0.1)';
+                } else if (parentSector.includes('Derivative')) {
+                    // Derivatives is purple/blue themed
+                    color = '#2c224f'; // deep purple/blue
+                    cell.style.boxShadow = 'inset 0 0 10px rgba(100,0,255,0.1)';
+                }
+
+                cell.style.left = x + 'px';
+                cell.style.top = y + 'px';
+                cell.style.width = (w - 1) + 'px';
+                cell.style.height = (h - 1) + 'px';
+                cell.style.backgroundColor = color;
+                cell.style.border = '1px solid rgba(255,255,255,0.05)';
+
+                cell.innerHTML = `
+                    <div class="hm-cell-sym" style="font-size:11px">${item.name}</div>
+                    <div class="hm-cell-price" style="color:var(--text-muted); font-size:9px">$${formatLargeNumber(item.volume)}</div>
+                `;
+
+                cell.onmouseenter = (e) => showLiquidityTooltip(e, item, parentSector);
+                cell.onmouseleave = hideHeatmapTooltip;
+
+                return cell;
+            }
+
+            function showLiquidityTooltip(e, item, sector) {
+                const t = document.getElementById('hmTooltip');
+                if (!t) return;
+                
+                t.innerHTML = `
+                    <div class="hm-tooltip-sym">${item.name}</div>
+                    <div class="hm-tooltip-row"><span class="hm-tooltip-label">Sector</span><span class="hm-tooltip-val" style="color:var(--text-muted)">${sector}</span></div>
+                    <div class="hm-tooltip-row"><span class="hm-tooltip-label">24H Volume</span><span class="hm-tooltip-val" style="color:var(--bloomberg-blue)">$${formatLargeNumber(item.volume)}</span></div>
+                    ${item.trust ? `<div class="hm-tooltip-row"><span class="hm-tooltip-label">Trust Score</span><span class="hm-tooltip-val">${item.trust}/10</span></div>` : ''}
+                `;
+                t.classList.add('visible');
+                moveHeatmapTooltip(e);
+            }
+
+            // Start by splitting the top level categories
+            split(sortedCategories, 0, 0, width, height, true, null);
         }
 
         async function updateHeatmap() {

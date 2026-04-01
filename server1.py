@@ -844,6 +844,57 @@ def market_global():
         "active_coins": f"{g.get('active_cryptocurrencies', 0):,}"
     })
 
+@app.route("/api/market/exchanges")
+def market_exchanges():
+    try:
+        spot_data, _ = get_cg("/exchanges", params={"per_page": 50})
+        deriv_data, _ = get_cg("/derivatives/exchanges", params={"per_page": 50})
+        
+        btc_price_data, _ = get_cg("/simple/price", params={"ids": "bitcoin", "vs_currencies": "usd"})
+        btc_price = 60000 
+        if isinstance(btc_price_data, dict) and "bitcoin" in btc_price_data:
+            btc_price = btc_price_data["bitcoin"].get("usd", 60000)
+            
+        result = []
+        
+        spot_list = []
+        if isinstance(spot_data, list):
+            for e in spot_data:
+                vol_btc = e.get("trade_volume_24h_btc", 0)
+                if not vol_btc: continue
+                spot_list.append({
+                    "name": e.get("name"),
+                    "volume": float(vol_btc) * btc_price,
+                    "trust": e.get("trust_score", 0)
+                })
+        if spot_list:
+            spot_sorted = sorted(spot_list, key=lambda x: x["volume"], reverse=True)[:30]
+            result.append({
+                "sector": "Spot Exchanges",
+                "exchanges": spot_sorted
+            })
+            
+        deriv_list = []
+        if isinstance(deriv_data, list):
+            for e in deriv_data:
+                vol_btc = e.get("trade_volume_24h_btc", 0)
+                if not vol_btc: continue
+                deriv_list.append({
+                    "name": e.get("name"),
+                    "volume": float(vol_btc) * btc_price
+                })
+        if deriv_list:
+            deriv_sorted = sorted(deriv_list, key=lambda x: x["volume"], reverse=True)[:30]
+            result.append({
+                "sector": "Derivative Exchanges",
+                "exchanges": deriv_sorted
+            })
+            
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/market/list")
 def market_list():
     cat = request.args.get("category", "all").lower()
